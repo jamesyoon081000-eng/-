@@ -255,8 +255,10 @@
       💰 <b>돈가방</b> — +$100,000<br>
       🧂 <b>소금</b> — 달팽이 4초간 크게 느려짐 (죽지는 않음)<br>
       ☕ <b>커피</b> — 스태미나 회복 + 5초간 속도 증가<br><br>
-      🐌 달팽이는 <b>불멸</b>이라 나무와 바위를 그냥 통과합니다.<br>
-      시간이 지날수록 조금씩 빨라집니다. 1초 = 하루.
+      🐌 분홍 우비의 살인 달팽이는 <b>불멸</b>이라 나무와 바위를 그냥 통과합니다.<br>
+      시간이 지날수록 빨라집니다. 1초 = 하루.<br>
+      🚀 <b>45일</b>부터 로켓 부스터로 순간 가속<br>
+      🔫 <b>90일</b>부터 로켓포 발사 — 피하세요!
     </div>
     <button class="btn btn-primary" data-back>돌아가기</button>
   </div>
@@ -275,7 +277,7 @@
 <section class="screen" id="overScreen">
   <div class="card">
     <div class="title-snail">🐌💀</div>
-    <div class="gameover-title">달팽이가 당신에게 닿았습니다</div>
+    <div class="gameover-title" id="overTitle">달팽이가 당신에게 닿았습니다</div>
     <p class="subtitle" id="overQuote"></p>
     <div class="newbest" id="newBest" style="display:none">🎉 개인 최고 기록!</div>
     <div class="stat-grid">
@@ -563,7 +565,7 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
-const PLAYER_R = 14, SNAIL_R = 18;
+const PLAYER_R = 14, SNAIL_R = 20;
 const WALK = 125, SPRINT = 200, DASH = 520;
 
 const game = { running: false, paused: false };
@@ -605,6 +607,7 @@ function nearbyChunks(x, y, range) {
 }
 
 const QUOTES = [
+  "아이 킬 유~",
   "달팽이는 결코 멈추지 않았다.",
   "100만 달러로도 달팽이를 막을 수는 없었다.",
   "잠깐 한눈판 사이, 달팽이는 이미 거기 있었다.",
@@ -621,8 +624,8 @@ function startGame() {
     running: true, paused: false,
     t: 0, money: 1000000, bonus: 0, traveled: 0,
     player: { x: 0, y: 0, vx: 0, vy: 0, face: 1, anim: 0, stamina: 1, dashCd: 0, dashT: 0, boostT: 0, dirX: 1, dirY: 0 },
-    snail: { x: Math.cos(ang) * 700, y: Math.sin(ang) * 700, base: 55, slowT: 0, dir: 0, wob: 0 },
-    items: [], trail: [], particles: [], popups: [],
+    snail: { x: Math.cos(ang) * 700, y: Math.sin(ang) * 700, base: 55, slowT: 0, dir: 0, wob: 0, phase: 1, boostT: 0, boostCd: 4, fireCd: 3, sayT: 0, sayCd: 1.5, say: "" },
+    items: [], trail: [], particles: [], popups: [], rockets: [], deathBy: "touch",
     itemTimer: 0, shake: 0, lastBeat: 0,
   });
   // 시작 위치 주변 장애물 치우기
@@ -662,6 +665,7 @@ function gameOver() {
   $("overDist").textContent = Math.floor(game.traveled / 10).toLocaleString() + "m";
   $("overBest").textContent = best.days + "일";
   $("newBest").style.display = isBest ? "block" : "none";
+  $("overTitle").textContent = game.deathBy === "rocket" ? "달팽이의 로켓포에 맞았습니다" : "달팽이가 당신에게 닿았습니다";
   $("overQuote").textContent = QUOTES[Math.floor(Math.random() * QUOTES.length)];
   setTimeout(() => show("overScreen"), 700);
 }
@@ -720,6 +724,13 @@ function pickup(it) {
   for (let i = 0; i < 12; i++) {
     const a = Math.random() * Math.PI * 2, v = 60 + Math.random() * 120;
     game.particles.push({ x: it.x, y: it.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.6, max: 0.6, c: it.kind === "money" ? "#f5c542" : "#fff" });
+  }
+}
+function explode(x, y) {
+  beep(70, 0.3, "sawtooth", 0.08);
+  for (let i = 0; i < 18; i++) {
+    const a = Math.random() * Math.PI * 2, v = 60 + Math.random() * 160;
+    game.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.5, max: 0.5, c: i % 2 ? "#ff9d2e" : "#ffd84a" });
   }
 }
 function popup(x, y, text, color) {
@@ -824,8 +835,46 @@ function update(dt) {
   // 달팽이: 항상 플레이어 위치를 안다. 장애물 무시. 시간이 지날수록 빨라짐.
   s.slowT = Math.max(0, s.slowT - dt);
   let sspd = s.base + Math.min(95, game.t * 0.9);
-  if (s.slowT > 0) sspd *= 0.25;
   const sdx = p.x - s.x, sdy = p.y - s.y, sd = Math.hypot(sdx, sdy);
+
+  // 단계: 1 기본 → 2 로켓 부스터 → 3 로켓포
+  const newPhase = game.t >= 90 ? 3 : game.t >= 45 ? 2 : 1;
+  if (newPhase !== s.phase) {
+    s.phase = newPhase;
+    if (newPhase === 2) toast("🚀 달팽이가 로켓 부스터를 장착했다!");
+    if (newPhase === 3) toast("🔫 달팽이가 로켓포를 들었다! 포탄을 피하세요!");
+    s.say = "아이 킬 유~"; s.sayT = 2;
+    beep(220, 0.4, "sawtooth", 0.08);
+  }
+  // 대사
+  s.sayT = Math.max(0, s.sayT - dt);
+  s.sayCd -= dt;
+  if (s.sayCd <= 0) {
+    const lines = ["아이 킬 유~", "I kill you~", "kill you!!", "you~"];
+    s.say = lines[Math.floor(Math.random() * lines.length)];
+    s.sayT = 1.8; s.sayCd = 5 + Math.random() * 4;
+  }
+  // 부스터
+  if (s.phase >= 2) {
+    s.boostCd -= dt;
+    if (s.boostCd <= 0 && sd > 220 && s.slowT <= 0) {
+      s.boostT = 1.1; s.boostCd = 6 + Math.random() * 3;
+      beep(140, 0.5, "sawtooth", 0.06);
+    }
+  }
+  if (s.boostT > 0) { s.boostT -= dt; sspd *= 2.3; }
+  // 로켓포
+  if (s.phase >= 3 && s.slowT <= 0) {
+    s.fireCd -= dt;
+    if (s.fireCd <= 0 && sd < 750 && sd > 120) {
+      s.fireCd = 3.2 + Math.random() * 1.2;
+      const a = Math.atan2(sdy, sdx);
+      game.rockets.push({ x: s.x + Math.cos(a) * 26, y: s.y - 12 + Math.sin(a) * 26, vx: Math.cos(a) * 240, vy: Math.sin(a) * 240, a, life: 4 });
+      s.say = "you~"; s.sayT = 1;
+      beep(180, 0.25, "square", 0.07);
+    }
+  }
+  if (s.slowT > 0) sspd *= 0.25;
   // 너무 멀어지면 따라잡는 속도 (그래도 절대 순간이동은 안 함)
   if (sd > 1400) sspd *= 1.8;
   if (sd > 0) { s.x += sdx / sd * sspd * dt; s.y += sdy / sd * sspd * dt; }
@@ -835,6 +884,19 @@ function update(dt) {
   while (diff < -Math.PI) diff += Math.PI * 2;
   s.dir += diff * Math.min(1, dt * 4);
   s.wob += dt * (2 + sspd / 30);
+
+  // 로켓 포탄
+  for (const r of game.rockets) {
+    r.x += r.vx * dt; r.y += r.vy * dt; r.life -= dt;
+    if (Math.random() < 0.8) game.particles.push({ x: r.x - r.vx * 0.03, y: r.y - r.vy * 0.03, vx: (Math.random() - .5) * 30, vy: (Math.random() - .5) * 30, life: 0.35, max: 0.35, c: "#bbbbbb" });
+    if (hitsObstacle(r.x, r.y, 4)) { r.life = 0; explode(r.x, r.y); }
+    else if (Math.hypot(r.x - p.x, r.y - p.y) < PLAYER_R + 7) {
+      r.life = 0; explode(r.x, r.y);
+      game.deathBy = "rocket"; game.shake = 16; gameOver(); return;
+    }
+    else if (r.life <= 0) explode(r.x, r.y);
+  }
+  game.rockets = game.rockets.filter(r => r.life > 0);
 
   // 점액 자국
   const lt = game.trail[game.trail.length - 1];
@@ -948,6 +1010,16 @@ function draw() {
   drawables.push({ y: p.y, fn: () => drawMan(p) });
   drawables.push({ y: s.y, fn: () => drawSnail(s) });
   drawables.sort((a, b) => a.y - b.y).forEach(d => d.fn());
+
+  // 로켓 포탄
+  for (const r of game.rockets) {
+    ctx.save(); ctx.translate(r.x, r.y); ctx.rotate(r.a);
+    ctx.fillStyle = "#ff9d2e";
+    ctx.beginPath(); ctx.moveTo(-10, -3); ctx.lineTo(-18 - Math.random() * 6, 0); ctx.lineTo(-10, 3); ctx.fill();
+    ctx.fillStyle = "#4a4f55"; ctx.fillRect(-10, -3.5, 14, 7);
+    ctx.fillStyle = "#d33"; ctx.beginPath(); ctx.moveTo(4, -3.5); ctx.lineTo(10, 0); ctx.lineTo(4, 3.5); ctx.fill();
+    ctx.restore();
+  }
 
   // 파티클
   for (const pt of game.particles) {
@@ -1108,80 +1180,167 @@ function drawMan(p) {
   ctx.fillText("💵", x + p.face * 11, y + 3);
 }
 
-/* 불멸의 살인 달팽이 */
+/* 불멸의 살인 달팽이: 분홍 우비 + 더듬이 후드 + 등에 큰 달팽이 껍데기 */
 function drawSnail(s) {
   const facing = Math.cos(s.dir) >= 0 ? 1 : -1;
-  const stretch = 1 + Math.sin(s.wob) * 0.06;
+  const step = Math.sin(s.wob * 2);
+  const bob = Math.abs(step) * 1.5;
 
   // 위협 오라
-  const aura = ctx.createRadialGradient(s.x, s.y, 5, s.x, s.y, 45);
+  const aura = ctx.createRadialGradient(s.x, s.y - 10, 5, s.x, s.y - 10, 55);
   aura.addColorStop(0, "rgba(150,20,30,.25)");
   aura.addColorStop(1, "rgba(150,20,30,0)");
   ctx.fillStyle = aura;
-  ctx.beginPath(); ctx.arc(s.x, s.y, 45, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(s.x, s.y - 10, 55, 0, Math.PI * 2); ctx.fill();
 
   ctx.fillStyle = "rgba(0,0,0,.25)";
-  ctx.beginPath(); ctx.ellipse(s.x, s.y + 12, 24, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(s.x, s.y + 16, 24, 6, 0, 0, Math.PI * 2); ctx.fill();
 
   ctx.save();
-  ctx.translate(s.x, s.y);
-  ctx.scale(facing, 1);
+  ctx.translate(s.x, s.y - bob);
 
-  // 몸
-  ctx.fillStyle = "#b9a98a";
-  ctx.beginPath();
-  ctx.moveTo(-22, 10);
-  ctx.quadraticCurveTo(0, 14, 20 * stretch, 10);
-  ctx.quadraticCurveTo(28 * stretch, 6, 24 * stretch, -4);
-  ctx.quadraticCurveTo(20 * stretch, -8, 14 * stretch, -2);
-  ctx.lineTo(-20, 4);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = "rgba(255,255,255,.2)";
-  ctx.beginPath(); ctx.ellipse(4, 8, 16, 2, 0, 0, Math.PI * 2); ctx.fill();
-
-  // 더듬이 + 붉은 눈
-  const wob = Math.sin(s.wob * 1.3) * 2;
-  ctx.strokeStyle = "#a8987a"; ctx.lineWidth = 2.5; ctx.lineCap = "round";
-  ctx.beginPath(); ctx.moveTo(20 * stretch, -4); ctx.lineTo(24 * stretch + wob, -20); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(22 * stretch, -3); ctx.lineTo(30 * stretch - wob, -17); ctx.stroke();
-  const glow = 0.6 + Math.sin(game.t * 6) * 0.4;
-  for (const [ex, ey] of [[24 * stretch + wob, -21], [30 * stretch - wob, -18]]) {
-    ctx.fillStyle = `rgba(255,40,40,${0.35 * glow})`;
-    ctx.beginPath(); ctx.arc(ex, ey, 5.5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#1a0505";
-    ctx.beginPath(); ctx.arc(ex, ey, 3, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#ff3030";
-    ctx.beginPath(); ctx.arc(ex + 0.5, ey, 1.6, 0, Math.PI * 2); ctx.fill();
+  // --- 껍데기 (몸 뒤) ---
+  const shellY = -16;
+  const sg = ctx.createRadialGradient(-6, shellY - 8, 4, 0, shellY, 30);
+  sg.addColorStop(0, "#d8c09a");
+  sg.addColorStop(0.6, "#9c7a52");
+  sg.addColorStop(1, "#5e4328");
+  ctx.fillStyle = sg;
+  ctx.beginPath(); ctx.ellipse(0, shellY, 27, 30, 0, 0, Math.PI * 2); ctx.fill();
+  // 얼룩 무늬
+  ctx.fillStyle = "rgba(60,40,20,.35)";
+  for (let i = 0; i < 9; i++) {
+    const a = i * 0.7, r = 8 + (i * 7) % 16;
+    ctx.beginPath(); ctx.ellipse(Math.cos(a) * r, shellY + Math.sin(a) * r, 3.5, 2, a, 0, Math.PI * 2); ctx.fill();
   }
-  // 입 (살짝 웃는)
-  ctx.strokeStyle = "#5b4a33"; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.arc(24 * stretch, 3, 3, 0.2, Math.PI - 0.6); ctx.stroke();
-
-  // 껍데기
-  ctx.fillStyle = "#8a5a2b";
-  ctx.beginPath(); ctx.arc(-4, -6, 15, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = "#5e3a18"; ctx.lineWidth = 2.5;
+  // 나선
+  ctx.strokeStyle = "rgba(70,45,20,.7)"; ctx.lineWidth = 2;
   ctx.beginPath();
   for (let a = 0; a < Math.PI * 5; a += 0.15) {
-    const r = 13 - a * 0.8;
-    if (r < 0.5) break;
-    const px = -4 + Math.cos(a) * r, py = -6 + Math.sin(a) * r;
+    const r = 24 - a * 1.45;
+    if (r < 1) break;
+    const px = Math.cos(a) * r * 0.9, py = shellY + Math.sin(a) * r;
     a === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
   }
   ctx.stroke();
-  ctx.fillStyle = "rgba(255,255,255,.15)";
-  ctx.beginPath(); ctx.arc(-9, -12, 5, 0, Math.PI * 2); ctx.fill();
+
+  // --- 로켓 부스터 (45일~) ---
+  if (s.phase >= 2) {
+    for (const side of [-1, 1]) {
+      const bx = side * 24;
+      if (s.boostT > 0 || Math.random() < 0.3) {
+        const fl = s.boostT > 0 ? 18 + Math.random() * 10 : 6;
+        const fg = ctx.createLinearGradient(bx, 4, bx, 4 + fl);
+        fg.addColorStop(0, "rgba(160,230,255,.95)");
+        fg.addColorStop(1, "rgba(40,120,255,0)");
+        ctx.fillStyle = fg;
+        ctx.beginPath(); ctx.moveTo(bx - 5, 4); ctx.lineTo(bx, 4 + fl); ctx.lineTo(bx + 5, 4); ctx.fill();
+      }
+      ctx.fillStyle = "#d9dde2";
+      ctx.beginPath(); ctx.roundRect(bx - 6, -34, 12, 38, 5); ctx.fill();
+      ctx.fillStyle = "#3a3f46";
+      ctx.fillRect(bx - 6, -2, 12, 6);
+      ctx.fillStyle = "#4fd6e8";
+      ctx.fillRect(bx - 1.5, -30, 3, 22);
+      ctx.fillStyle = "#c62828";
+      ctx.fillRect(bx - 6, -20, 12, 2);
+    }
+  }
+
+  ctx.scale(facing, 1);
+
+  // --- 다리 (검정 바지 + 흰 신발) ---
+  ctx.fillStyle = "#1b1b1f";
+  ctx.fillRect(-7, 2, 5.5, 11 + step * 2);
+  ctx.fillRect(1.5, 2, 5.5, 11 - step * 2);
+  ctx.fillStyle = "#f4f4f4";
+  ctx.beginPath(); ctx.ellipse(-4, 14 + step * 2, 4.5, 2.4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(4.5, 14 - step * 2, 4.5, 2.4, 0, 0, Math.PI * 2); ctx.fill();
+
+  // --- 분홍 우비 몸통 ---
+  ctx.fillStyle = "#f4a7c0";
+  ctx.beginPath();
+  ctx.moveTo(-8, -18); ctx.lineTo(8, -18);
+  ctx.lineTo(12, 5); ctx.lineTo(-12, 5);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = "#e58aa8"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, -17); ctx.lineTo(0, 5); ctx.stroke();
+  ctx.fillStyle = "#e07a9c";
+  for (const by of [-12, -6, 0]) { ctx.beginPath(); ctx.arc(1.8, by, 0.9, 0, Math.PI * 2); ctx.fill(); }
+
+  // --- 팔: 90일 전엔 양팔 벌리기, 이후엔 로켓포 ---
+  ctx.strokeStyle = "#f4a7c0"; ctx.lineWidth = 5; ctx.lineCap = "round";
+  if (s.phase < 3) {
+    const wave = Math.sin(s.wob * 1.5) * 4;
+    ctx.beginPath(); ctx.moveTo(-7, -15); ctx.lineTo(-20, -12 + wave); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(7, -15); ctx.lineTo(20, -12 - wave); ctx.stroke();
+    ctx.fillStyle = "#f1c9a5";
+    ctx.beginPath(); ctx.arc(-21, -12 + wave, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(21, -12 - wave, 2.5, 0, Math.PI * 2); ctx.fill();
+  } else {
+    ctx.beginPath(); ctx.moveTo(-6, -14); ctx.lineTo(4, -8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(6, -14); ctx.lineTo(10, -8); ctx.stroke();
+    // 로켓포
+    ctx.fillStyle = "#2b2e33";
+    ctx.beginPath(); ctx.roundRect(-8, -13, 34, 7, 3); ctx.fill();
+    ctx.fillStyle = "#15171a";
+    ctx.beginPath(); ctx.arc(26, -9.5, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#3d4249";
+    ctx.fillRect(4, -18, 8, 5);
+    ctx.fillStyle = "#e33";
+    ctx.beginPath(); ctx.arc(10, -15.5, 1.2, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // --- 머리: 분홍 후드 + 얼굴 ---
+  ctx.fillStyle = "#f4a7c0";
+  ctx.beginPath(); ctx.arc(0, -26, 10.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#f1c9a5";
+  ctx.beginPath(); ctx.ellipse(1.5, -24.5, 7, 7.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#2a1d14";
+  ctx.beginPath(); ctx.ellipse(1.5, -30.5, 6.5, 2.2, 0, Math.PI, 0); ctx.fill();
+  // 웃는 눈 (^ ^)
+  ctx.strokeStyle = "#222"; ctx.lineWidth = 1.3;
+  ctx.beginPath(); ctx.arc(-1.2, -25.5, 1.8, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+  ctx.beginPath(); ctx.arc(4.5, -25.5, 1.8, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+  // 크게 웃는 입
+  ctx.fillStyle = "#8a1f2b";
+  ctx.beginPath(); ctx.arc(1.8, -21.5, 3.2, 0, Math.PI); ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(-0.8, -21.5, 5.2, 1.1);
+
+  // --- 더듬이 ---
+  const aw = Math.sin(s.wob * 1.3) * 2;
+  ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(-4, -34); ctx.quadraticCurveTo(-7, -40, -9 + aw, -45); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(5, -34); ctx.quadraticCurveTo(8, -40, 10 - aw, -45); ctx.stroke();
+  ctx.fillStyle = "#f7c6d6";
+  ctx.beginPath(); ctx.arc(-9 + aw, -46, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(10 - aw, -46, 3, 0, Math.PI * 2); ctx.fill();
 
   ctx.restore();
 
   // 소금 맞은 상태
   if (s.slowT > 0) {
     ctx.fillStyle = "#fff";
-    for (let i = 0; i < 5; i++) {
-      const a = game.t * 2 + i * 1.25;
-      ctx.fillRect(s.x + Math.cos(a) * 22 - 1.5, s.y - 10 + Math.sin(a) * 10 - 1.5, 3, 3);
+    for (let i = 0; i < 6; i++) {
+      const a = game.t * 2 + i * 1.05;
+      ctx.fillRect(s.x + Math.cos(a) * 26 - 1.5, s.y - 18 + Math.sin(a) * 14 - 1.5, 3, 3);
     }
+  }
+
+  // 말풍선
+  if (s.sayT > 0) {
+    ctx.font = "bold 14px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const w = ctx.measureText(s.say).width + 16;
+    const bx = s.x, by = s.y - 72;
+    ctx.globalAlpha = Math.min(1, s.sayT * 3);
+    ctx.fillStyle = "rgba(20,20,20,.85)";
+    ctx.beginPath(); ctx.roundRect(bx - w / 2, by - 12, w, 24, 6); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(bx - 5, by + 12); ctx.lineTo(bx, by + 18); ctx.lineTo(bx + 5, by + 12); ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.fillText(s.say, bx, by + 1);
+    ctx.globalAlpha = 1;
   }
 }
 
