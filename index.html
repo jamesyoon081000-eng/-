@@ -502,7 +502,9 @@ function saveScore(days, money) {
 function renderBoard() {
   const list = $("boardList");
   list.innerHTML = "";
-  const scores = getScores().slice(0, 10);
+  // 한 사람당 최고 기록 하나만 표시 (getScores는 이미 정렬됨)
+  const seen = new Set();
+  const scores = getScores().filter(s => !seen.has(s.uid) && seen.add(s.uid)).slice(0, 10);
   if (!scores.length) {
     list.innerHTML = '<p class="subtitle" style="text-align:center">아직 아무도 달팽이에게 잡히지 않았습니다.</p>';
     return;
