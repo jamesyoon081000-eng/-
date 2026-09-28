@@ -268,6 +268,7 @@
 <section class="screen" id="boardScreen">
   <div class="card">
     <h2>🏆 명예의 전당</h2>
+    <p class="hint" id="boardNote" style="margin:-4px 0 10px"></p>
     <div class="board" id="boardList"></div>
     <button class="btn btn-primary" data-back>돌아가기</button>
   </div>
@@ -498,27 +499,104 @@ function saveScore(days, money) {
   scores.push({ uid: currentUser.id, name: currentUser.name, days, money, at: Date.now() });
   scores.sort((a, b) => b.days - a.days || b.money - a.money);
   store.set("snail_scores", scores.slice(0, 100));
+  submitGlobal();
 }
-function renderBoard() {
-  const list = $("boardList");
-  list.innerHTML = "";
-  // 한 사람당 최고 기록 하나만 표시 (getScores는 이미 정렬됨)
-  const seen = new Set();
-  const scores = getScores().filter(s => !seen.has(s.uid) && seen.add(s.uid)).slice(0, 10);
-  if (!scores.length) {
-    list.innerHTML = '<p class="subtitle" style="text-align:center">아직 아무도 달팽이에게 잡히지 않았습니다.</p>';
-    return;
-  }
+
+/* ---------------- 전체 순위 (Firebase Firestore REST) ---------------- */
+const FIREBASE = {
+  apiKey: "AIzaSyCeraPqbwJbU0ctiy_erEMX10xdTHFaybk",
+  projectId: "i-kill-you-c35a3",
+};
+const FS_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE.projectId}/databases/(default)/documents`;
+
+// 이메일/구글 ID를 그대로 올리지 않도록 해시한 값을 문서 ID로 사용
+async function myDocId() {
+  return (await sha256("snail:" + currentUser.id)).slice(0, 24);
+}
+
+// 내 최고 기록을 전체 순위에 올림 (서버 규칙이 더 좋은 기록일 때만 덮어쓰기 허용)
+async function submitGlobal() {
+  const best = getBest();
+  if (!best) return;
+  try {
+    const id = await myDocId();
+    await fetch(`${FS_BASE}/scores/${id}?key=${FIREBASE.apiKey}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: {
+        name: { stringValue: String(currentUser.name || "익명").slice(0, 16) },
+        days: { integerValue: String(best.days) },
+        money: { integerValue: String(Math.floor(best.money)) },
+        at: { timestampValue: new Date().toISOString() },
+      } }),
+    });
+  } catch {}
+}
+
+async function fetchGlobal() {
+  const res = await fetch(`${FS_BASE}:runQuery?key=${FIREBASE.apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ structuredQuery: {
+      from: [{ collectionId: "scores" }],
+      orderBy: [{ field: { fieldPath: "days" }, direction: "DESCENDING" }],
+      limit: 20,
+    } }),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const rows = await res.json();
+  return rows.filter(r => r.document).map(r => {
+    const f = r.document.fields;
+    return {
+      id: r.document.name.split("/").pop(),
+      name: f.name.stringValue,
+      days: Number(f.days.integerValue),
+      money: Number(f.money.integerValue),
+    };
+  });
+}
+
+function drawBoardRows(list, scores, isMe) {
   scores.forEach((s, i) => {
     const row = document.createElement("div");
     row.className = "item";
     const medal = ["🥇", "🥈", "🥉"][i] || (i + 1);
     row.innerHTML = `<span class="rank"></span><span class="who"></span><span class="score"></span>`;
     row.children[0].textContent = medal;
-    row.children[1].textContent = s.name + (currentUser && s.uid === currentUser.id ? " (나)" : "");
+    row.children[1].textContent = s.name + (isMe(s) ? " (나)" : "");
     row.children[2].textContent = `${s.days}일 · ${fmtMoney(s.money)}`;
     list.appendChild(row);
   });
+}
+
+async function renderBoard() {
+  const list = $("boardList");
+  const note = $("boardNote");
+  list.innerHTML = '<p class="subtitle" style="text-align:center">전체 순위 불러오는 중...</p>';
+  note.textContent = "";
+  try {
+    await submitGlobal();
+    const [scores, me] = await Promise.all([fetchGlobal(), myDocId()]);
+    list.innerHTML = "";
+    if (!scores.length) {
+      list.innerHTML = '<p class="subtitle" style="text-align:center">아직 아무도 달팽이에게 잡히지 않았습니다.</p>';
+      return;
+    }
+    scores.sort((a, b) => b.days - a.days || b.money - a.money);
+    drawBoardRows(list, scores, s => s.id === me);
+    note.textContent = "🌍 전체 플레이어 순위";
+  } catch {
+    // 오프라인이거나 서버 오류면 이 기기 기록으로 대체
+    list.innerHTML = "";
+    const seen = new Set();
+    const scores = getScores().filter(s => !seen.has(s.uid) && seen.add(s.uid)).slice(0, 10);
+    if (!scores.length) {
+      list.innerHTML = '<p class="subtitle" style="text-align:center">아직 아무도 달팽이에게 잡히지 않았습니다.</p>';
+    } else {
+      drawBoardRows(list, scores, s => currentUser && s.uid === currentUser.id);
+    }
+    note.textContent = "📱 전체 순위를 불러오지 못해 이 기기 기록만 표시합니다";
+  }
 }
 
 $("startBtn").onclick = startGame;
