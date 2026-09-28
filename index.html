@@ -157,6 +157,7 @@
   .bar { width: 120px; height: 8px; background: #2a3326; border-radius: 4px; overflow: hidden; margin-top: 4px; }
   .bar > div { height: 100%; background: #5cc8ff; width: 100%; transition: width .1s; }
   .hud-right { text-align: right; }
+  .hud-btn:disabled { opacity: .3; cursor: default; }
   .hud-btn {
     pointer-events: auto;
     background: rgba(12,16,10,.72);
@@ -323,6 +324,11 @@
 <section class="screen" id="boardScreen">
   <div class="card">
     <h2>🏆 명예의 전당</h2>
+    <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:6px">
+      <button class="hud-btn" id="seasonPrev" style="margin:0" aria-label="이전 시즌">◀</button>
+      <b id="seasonTitle" style="min-width:150px"></b>
+      <button class="hud-btn" id="seasonNext" style="margin:0" aria-label="다음 시즌">▶</button>
+    </div>
     <p class="hint" id="boardNote" style="margin:-4px 0 10px"></p>
     <div class="board" id="boardList"></div>
     <button class="btn btn-danger" id="resetBoardBtn" style="display:none;margin-bottom:10px">👑 명예의 전당 초기화 (관리자)</button>
@@ -642,7 +648,7 @@ function recordRun(days, money) {
   if (isBest) profile.best = { days, money };
   saveProfile();
   if (useCloud()) {
-    db.collection("scores").doc(currentUser.id).set({
+    seasonScores(seasonOf()).doc(currentUser.id).set({
       name: currentUser.name.slice(0, 16), days, money,
       at: firebase.firestore.FieldValue.serverTimestamp(),
     }).catch(() => {});
@@ -709,32 +715,54 @@ function openShop(from) {
   show("shopScreen");
 }
 
-/* ---------------- 명예의 전당 (Firestore scores/{uid}) ---------------- */
-// 관리자: 이 Google 계정(이메일 인증된 계정)만 명예의 전당 초기화 가능. 서버 규칙에서도 같은 조건으로 막음
+/* ---------------- 명예의 전당: 매달 새 시즌 (Firestore seasons/{YYYY-MM}/scores/{uid}) ---------------- */
+// 시즌은 한국 시간 기준 달마다 자동으로 바뀜. 지난 시즌 순위는 그대로 남아서 볼 수 있음
+function seasonOf(date = new Date()) {
+  const k = new Date(date.getTime() + 9 * 3600 * 1000); // KST
+  return k.getUTCFullYear() + "-" + String(k.getUTCMonth() + 1).padStart(2, "0");
+}
+function shiftSeason(sid, delta) {
+  const [y, m] = sid.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0");
+}
+const seasonLabel = sid => { const [y, m] = sid.split("-"); return `${y}년 ${Number(m)}월 시즌`; };
+function daysLeftInSeason() {
+  const next = shiftSeason(seasonOf(), 1).split("-").map(Number);
+  const end = Date.UTC(next[0], next[1] - 1, 1) - 9 * 3600 * 1000; // 다음 달 1일 0시 KST
+  return Math.max(0, Math.ceil((end - Date.now()) / 86400000));
+}
+const seasonScores = sid => db.collection("seasons").doc(sid).collection("scores");
+let viewSeason = seasonOf();
+
+// 관리자: 이 Google 계정(이메일 인증된 계정)만 시즌 초기화 가능. 서버 규칙에서도 같은 조건으로 막음
 const ADMIN_EMAIL = "jamesyoon081000@gmail.com";
 const isAdmin = () => !!currentUser && currentUser.email === ADMIN_EMAIL && currentUser.verified && useCloud();
 
 async function resetBoard() {
   if (!isAdmin()) return;
-  if (!confirm("명예의 전당의 모든 기록을 삭제할까요?\n되돌릴 수 없습니다.")) return;
+  const sid = viewSeason;
+  if (!confirm(`${seasonLabel(sid)} 순위를 모두 삭제할까요?\n되돌릴 수 없습니다.`)) return;
   const btn = $("resetBoardBtn");
   btn.disabled = true; btn.textContent = "삭제 중...";
   try {
     for (;;) {
-      const snap = await db.collection("scores").limit(400).get();
+      const snap = await seasonScores(sid).limit(400).get();
       if (snap.empty) break;
       const batch = db.batch();
       snap.docs.forEach(d => batch.delete(d.ref));
       await batch.commit();
     }
-    toast("명예의 전당을 초기화했습니다");
+    toast(`${seasonLabel(sid)} 순위를 초기화했습니다`);
   } catch (err) {
     alert("초기화 실패: " + (err.code || err.message) + "\nFirestore 규칙이 최신인지 확인하세요.");
   }
-  btn.disabled = false; btn.textContent = "👑 명예의 전당 초기화 (관리자)";
+  btn.disabled = false;
   renderBoard();
 }
 $("resetBoardBtn").onclick = resetBoard;
+$("seasonPrev").onclick = () => { viewSeason = shiftSeason(viewSeason, -1); renderBoard(); };
+$("seasonNext").onclick = () => { if (viewSeason < seasonOf()) { viewSeason = shiftSeason(viewSeason, 1); renderBoard(); } };
 
 function drawBoardRows(list, scores) {
   scores.forEach((s, i) => {
@@ -752,22 +780,26 @@ function drawBoardRows(list, scores) {
 async function renderBoard() {
   const list = $("boardList");
   const note = $("boardNote");
-  const empty = '<p class="subtitle" style="text-align:center">아직 아무도 달팽이에게 잡히지 않았습니다.</p>';
+  const cur = seasonOf();
+  const isCur = viewSeason === cur;
+  const empty = `<p class="subtitle" style="text-align:center">${isCur ? "이번 시즌엔 아직 아무도 달팽이에게 잡히지 않았습니다." : "이 시즌엔 기록이 없습니다."}</p>`;
+  $("seasonTitle").textContent = seasonLabel(viewSeason);
+  $("seasonNext").disabled = isCur;
   $("resetBoardBtn").style.display = isAdmin() ? "flex" : "none";
-  list.innerHTML = '<p class="subtitle" style="text-align:center">전체 순위 불러오는 중...</p>';
-  note.textContent = "";
+  $("resetBoardBtn").textContent = `👑 ${seasonLabel(viewSeason)} 초기화 (관리자)`;
+  list.innerHTML = '<p class="subtitle" style="text-align:center">순위 불러오는 중...</p>';
+  note.textContent = isCur ? `⏳ 시즌 종료까지 ${daysLeftInSeason()}일 · 매달 1일 새 시즌 시작` : "📜 지난 시즌 최종 순위";
   try {
     if (!db) throw new Error("no db");
-    const snap = await db.collection("scores").orderBy("days", "desc").limit(20).get();
+    const snap = await seasonScores(viewSeason).orderBy("days", "desc").limit(20).get();
     const scores = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       .sort((a, b) => b.days - a.days || b.money - a.money);
     list.innerHTML = scores.length ? "" : empty;
     drawBoardRows(list, scores);
-    note.textContent = "🌍 전체 플레이어 순위";
   } catch {
     list.innerHTML = profile.best ? "" : empty;
     if (profile.best) drawBoardRows(list, [{ id: currentUser.id, name: currentUser.name, ...profile.best }]);
-    note.textContent = "📱 전체 순위를 불러오지 못해 내 기록만 표시합니다";
+    note.textContent = "📱 순위를 불러오지 못해 내 최고 기록만 표시합니다";
   }
 }
 
@@ -775,7 +807,7 @@ $("startBtn").onclick = startGame;
 $("shopBtn").onclick = () => openShop("menuScreen");
 $("overShopBtn").onclick = () => openShop("menuScreen");
 $("howtoBtn").onclick = () => { prevScreen = "menuScreen"; show("howtoScreen"); };
-$("boardBtn").onclick = () => { prevScreen = "menuScreen"; renderBoard(); show("boardScreen"); };
+$("boardBtn").onclick = () => { prevScreen = "menuScreen"; viewSeason = seasonOf(); renderBoard(); show("boardScreen"); };
 $("logoutBtn").onclick = logout;
 $("retryBtn").onclick = startGame;
 $("toMenuBtn").onclick = () => { $("game").classList.remove("active"); renderMenu(); show("menuScreen"); };
