@@ -14,7 +14,14 @@ service cloud.firestore {
         request.resource.data.days > resource.data.days ||
         (request.resource.data.days == resource.data.days &&
          request.resource.data.money > resource.data.money));
-      allow delete: if false;
+      allow delete: if isAdmin();
+    }
+
+    // 관리자: 이메일 인증된 이 계정만 (Google 로그인 권장)
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email == "jamesyoon081000@gmail.com"
+        && request.auth.token.email_verified == true;
     }
 
     function isOwner(uid) {

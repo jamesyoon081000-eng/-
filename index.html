@@ -325,6 +325,7 @@
     <h2>🏆 명예의 전당</h2>
     <p class="hint" id="boardNote" style="margin:-4px 0 10px"></p>
     <div class="board" id="boardList"></div>
+    <button class="btn btn-danger" id="resetBoardBtn" style="display:none;margin-bottom:10px">👑 명예의 전당 초기화 (관리자)</button>
     <button class="btn btn-primary" data-back>돌아가기</button>
   </div>
 </section>
@@ -542,6 +543,7 @@ function userFrom(u) {
     email: u.email || "",
     picture: u.photoURL || "",
     provider: u.isAnonymous ? "guest" : pid === "google.com" ? "google" : "email",
+    verified: !!u.emailVerified,
   };
 }
 
@@ -580,6 +582,7 @@ function renderMenu() {
   }
   $("profileName").textContent = u.name;
   $("profileEmail").textContent =
+    isAdmin() ? "👑 관리자 · " + u.email :
     u.provider === "google" ? "Google · " + u.email + " · ☁️ 자동 저장" :
     u.provider === "email" ? "이메일 · " + u.email + " · ☁️ 자동 저장" :
     "👤 게스트 · 이 브라우저에서만 이어집니다";
@@ -638,7 +641,7 @@ function recordRun(days, money) {
   profile.runs = [{ days, money, at: Date.now() }, ...profile.runs].slice(0, 20);
   if (isBest) profile.best = { days, money };
   saveProfile();
-  if (isBest && useCloud()) {
+  if (useCloud()) {
     db.collection("scores").doc(currentUser.id).set({
       name: currentUser.name.slice(0, 16), days, money,
       at: firebase.firestore.FieldValue.serverTimestamp(),
@@ -707,6 +710,32 @@ function openShop(from) {
 }
 
 /* ---------------- 명예의 전당 (Firestore scores/{uid}) ---------------- */
+// 관리자: 이 Google 계정(이메일 인증된 계정)만 명예의 전당 초기화 가능. 서버 규칙에서도 같은 조건으로 막음
+const ADMIN_EMAIL = "jamesyoon081000@gmail.com";
+const isAdmin = () => !!currentUser && currentUser.email === ADMIN_EMAIL && currentUser.verified && useCloud();
+
+async function resetBoard() {
+  if (!isAdmin()) return;
+  if (!confirm("명예의 전당의 모든 기록을 삭제할까요?\n되돌릴 수 없습니다.")) return;
+  const btn = $("resetBoardBtn");
+  btn.disabled = true; btn.textContent = "삭제 중...";
+  try {
+    for (;;) {
+      const snap = await db.collection("scores").limit(400).get();
+      if (snap.empty) break;
+      const batch = db.batch();
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+    toast("명예의 전당을 초기화했습니다");
+  } catch (err) {
+    alert("초기화 실패: " + (err.code || err.message) + "\nFirestore 규칙이 최신인지 확인하세요.");
+  }
+  btn.disabled = false; btn.textContent = "👑 명예의 전당 초기화 (관리자)";
+  renderBoard();
+}
+$("resetBoardBtn").onclick = resetBoard;
+
 function drawBoardRows(list, scores) {
   scores.forEach((s, i) => {
     const row = document.createElement("div");
@@ -724,6 +753,7 @@ async function renderBoard() {
   const list = $("boardList");
   const note = $("boardNote");
   const empty = '<p class="subtitle" style="text-align:center">아직 아무도 달팽이에게 잡히지 않았습니다.</p>';
+  $("resetBoardBtn").style.display = isAdmin() ? "flex" : "none";
   list.innerHTML = '<p class="subtitle" style="text-align:center">전체 순위 불러오는 중...</p>';
   note.textContent = "";
   try {
