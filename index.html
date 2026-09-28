@@ -7,6 +7,7 @@
 <!-- 구글 로그인 (Firebase Authentication) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
   :root {
     --bg: #10140f;
@@ -191,7 +192,11 @@
 <body>
 
 <!-- ============ 로그인 화면 ============ -->
-<section class="screen active" id="loginScreen">
+<section class="screen active" id="bootScreen">
+  <div class="card"><div class="title-snail">🐌</div><p class="subtitle" style="margin:0">불러오는 중...</p></div>
+</section>
+
+<section class="screen" id="loginScreen">
   <div class="card">
     <div class="title-snail">🐌</div>
     <h1>살인 달팽이에게 쫓기는 남자</h1>
@@ -215,7 +220,7 @@
         <button type="submit" class="btn btn-ghost" data-mode="signup">회원가입</button>
       </div>
     </form>
-    <p class="hint">이메일 계정은 이 브라우저에만 저장됩니다.</p>
+    <p class="hint"><a href="#" id="resetPwLink" style="color:var(--muted)">비밀번호를 잊으셨나요?</a></p>
   </div>
 </section>
 
@@ -338,10 +343,12 @@ const FIREBASE = {
   messagingSenderId: "590583133624",
   appId: "1:590583133624:web:ae1510ea54250ef8ffcb4d",
 };
-const fbAuth = (() => {
-  try { firebase.initializeApp(FIREBASE); return firebase.auth(); }
-  catch { return null; }
-})();
+let fbAuth = null, db = null;
+try {
+  firebase.initializeApp(FIREBASE);
+  fbAuth = firebase.auth();
+  db = firebase.firestore();
+} catch {}
 
 /* ---------------- 저장소 유틸 ---------------- */
 const store = {
@@ -367,12 +374,9 @@ function show(id) {
 document.querySelectorAll("[data-back]").forEach(b => b.onclick = () => show(prevScreen));
 
 /* ---------------- 인증 ---------------- */
-let currentUser = null;
-
-async function sha256(text) {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
-}
+let currentUser = null;  // { id, name, email, picture, provider, local? }
+let profile = null;      // 계정에 저장되는 진행상황 (다른 브라우저에서도 이어짐)
+let pendingName = null;  // 가입/게스트 시작 직후 표시할 이름
 
 function setMsg(text, ok) {
   const m = $("loginMsg");
@@ -385,101 +389,122 @@ document.querySelectorAll("#emailForm button[type=submit]").forEach(b => {
   b.addEventListener("click", () => submitMode = b.dataset.mode);
 });
 
+const AUTH_ERRORS = {
+  "auth/unauthorized-domain": "이 주소가 Firebase 승인된 도메인에 등록되지 않았습니다.",
+  "auth/operation-not-allowed": "Firebase에서 이 로그인 방식이 아직 켜지지 않았습니다.",
+  "auth/popup-closed-by-user": "로그인 창이 닫혔습니다.",
+  "auth/cancelled-popup-request": "",
+  "auth/network-request-failed": "네트워크 오류입니다. 잠시 후 다시 시도하세요.",
+  "auth/email-already-in-use": "이미 가입된 이메일입니다. 로그인을 눌러주세요.",
+  "auth/invalid-email": "올바른 이메일을 입력하세요.",
+  "auth/weak-password": "비밀번호는 6자 이상이어야 합니다.",
+  "auth/invalid-credential": "이메일 또는 비밀번호가 틀렸습니다.",
+  "auth/wrong-password": "이메일 또는 비밀번호가 틀렸습니다.",
+  "auth/user-not-found": "가입되지 않은 이메일입니다. 회원가입을 눌러주세요.",
+  "auth/too-many-requests": "시도가 너무 많습니다. 잠시 후 다시 시도하세요.",
+};
+function showAuthError(err) {
+  pendingName = null;
+  const msg = AUTH_ERRORS[err.code];
+  if (msg !== "") setMsg(msg || "오류가 발생했습니다. (" + (err.code || err.message) + ")");
+}
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const NO_SERVER = "로그인 서버에 연결할 수 없습니다. 게스트로 플레이하세요.";
+
+// 이메일/비밀번호
 $("emailForm").addEventListener("submit", async e => {
   e.preventDefault();
   const email = $("emailInput").value.trim().toLowerCase();
   const pw = $("pwInput").value;
-  const nick = $("nickInput").value.trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setMsg("올바른 이메일을 입력하세요.");
+  const nick = $("nickInput").value.trim().slice(0, 16);
+  if (!EMAIL_RE.test(email)) return setMsg("올바른 이메일을 입력하세요.");
   if (pw.length < 6) return setMsg("비밀번호는 6자 이상이어야 합니다.");
-
-  const users = store.get("snail_users", {});
-  const hash = await sha256(email + ":" + pw);
-
-  if (submitMode === "signup") {
-    if (users[email]) return setMsg("이미 가입된 이메일입니다. 로그인하세요.");
-    users[email] = { name: nick || email.split("@")[0], hash };
-    store.set("snail_users", users);
-    setMsg("가입 완료! 로그인합니다...", true);
-    login({ id: "email:" + email, name: users[email].name, email, provider: "email" });
-  } else {
-    const u = users[email];
-    if (!u) return setMsg("가입되지 않은 이메일입니다. 회원가입을 눌러주세요.");
-    if (u.hash !== hash) return setMsg("비밀번호가 틀렸습니다.");
-    login({ id: "email:" + email, name: u.name, email, provider: "email" });
-  }
+  if (!fbAuth) return setMsg(NO_SERVER);
+  setMsg("잠시만요...", true);
+  try {
+    if (submitMode === "signup") {
+      pendingName = nick || email.split("@")[0];
+      const r = await fbAuth.createUserWithEmailAndPassword(email, pw);
+      await r.user.updateProfile({ displayName: pendingName });
+    } else {
+      await fbAuth.signInWithEmailAndPassword(email, pw);
+    }
+  } catch (err) { showAuthError(err); }
 });
 
-function loginWithFirebaseUser(u) {
-  login({ id: "google:" + u.uid, name: u.displayName || u.email, email: u.email, picture: u.photoURL, provider: "google" });
-}
-
-const AUTH_ERRORS = {
-  "auth/unauthorized-domain": "이 주소가 Firebase 승인된 도메인에 등록되지 않았습니다.",
-  "auth/operation-not-allowed": "Firebase에서 Google 로그인이 아직 켜지지 않았습니다.",
-  "auth/popup-closed-by-user": "로그인 창이 닫혔습니다.",
-  "auth/cancelled-popup-request": "",
-  "auth/network-request-failed": "네트워크 오류입니다. 잠시 후 다시 시도하세요.",
+$("resetPwLink").onclick = async e => {
+  e.preventDefault();
+  const email = $("emailInput").value.trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return setMsg("위 이메일 칸에 가입한 이메일을 먼저 입력하세요.");
+  if (!fbAuth) return setMsg(NO_SERVER);
+  try {
+    fbAuth.languageCode = "ko";
+    await fbAuth.sendPasswordResetEmail(email);
+    setMsg("비밀번호 재설정 메일을 보냈습니다. 메일함을 확인하세요.", true);
+  } catch (err) { showAuthError(err); }
 };
 
-// 게스트(익명) 로그인: 닉네임 칸에 적은 이름을 쓰고, 없으면 "게스트1234"
-async function guestLogin() {
+// Google
+$("googleBtn").onclick = async () => {
+  if (!fbAuth) return setMsg(NO_SERVER);
   setMsg("");
-  const nick = $("nickInput").value.trim().slice(0, 16);
-  const name = nick || "게스트" + String(Math.floor(Math.random() * 10000)).padStart(4, "0");
-  if (fbAuth) {
-    try {
-      const r = await fbAuth.signInAnonymously();
-      const id = r.user.uid;
-      return login({ id: "guest:" + id, name, email: "게스트 계정", provider: "guest" });
-    } catch (err) {
-      if (err.code !== "auth/network-request-failed" && err.code !== "auth/operation-not-allowed") {
-        return setMsg("게스트 로그인 중 오류가 발생했습니다. (" + (err.code || err.message) + ")");
-      }
-    }
+  const provider = new firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  try {
+    await fbAuth.signInWithPopup(provider);
+  } catch (err) {
+    if (err.code === "auth/popup-blocked") return fbAuth.signInWithRedirect(provider);
+    showAuthError(err);
   }
-  // Firebase를 쓸 수 없으면 이 기기 전용 게스트
-  const id = "local" + Date.now() + Math.floor(Math.random() * 1e4);
-  login({ id: "guest:" + id, name, email: "게스트 계정", provider: "guest" });
-}
-$("guestBtn").onclick = guestLogin;
+};
 
-function setupGoogleButton() {
-  const btn = $("googleBtn");
+// 게스트 (익명): 닉네임 칸에 적은 이름, 없으면 "게스트1234"
+$("guestBtn").onclick = async () => {
+  setMsg("");
+  const name = $("nickInput").value.trim().slice(0, 16) || "게스트" + String(Math.floor(Math.random() * 10000)).padStart(4, "0");
   if (!fbAuth) {
-    btn.onclick = () => setMsg("구글 로그인을 불러오지 못했습니다. 이메일로 로그인하세요.");
-    return;
+    // 서버를 못 쓰면 이 브라우저 전용 게스트
+    const local = { id: "local-" + Date.now().toString(36), name, email: "", picture: "", provider: "guest", local: true };
+    store.set("snail_local_guest", local);
+    return enter(local);
   }
-  // 리다이렉트 방식으로 돌아온 경우 처리
-  fbAuth.getRedirectResult().then(r => { if (r && r.user) loginWithFirebaseUser(r.user); }).catch(() => {});
-  btn.onclick = async () => {
-    setMsg("");
-    const provider = new firebase.auth.GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: "select_account" });
-    try {
-      const r = await fbAuth.signInWithPopup(provider);
-      loginWithFirebaseUser(r.user);
-    } catch (err) {
-      if (err.code === "auth/popup-blocked") return fbAuth.signInWithRedirect(provider);
-      const msg = AUTH_ERRORS[err.code];
-      if (msg !== "") setMsg(msg || "구글 로그인 중 오류가 발생했습니다. (" + (err.code || err.message) + ")");
-    }
+  pendingName = name;
+  try {
+    const r = await fbAuth.signInAnonymously();
+    await r.user.updateProfile({ displayName: name });
+  } catch (err) { showAuthError(err); }
+};
+
+function userFrom(u) {
+  const pid = (u.providerData[0] || {}).providerId;
+  return {
+    id: u.uid,
+    name: pendingName || u.displayName || (u.email ? u.email.split("@")[0] : "게스트"),
+    email: u.email || "",
+    picture: u.photoURL || "",
+    provider: u.isAnonymous ? "guest" : pid === "google.com" ? "google" : "email",
   };
 }
 
-function login(user) {
+async function enter(user) {
   currentUser = user;
-  store.set("snail_session", user);
+  pendingName = null;
+  setMsg("");
+  show("bootScreen");
+  profile = await loadProfile();
+  currentUser.name = profile.name || currentUser.name;
+  setMuted(!!profile.muted, false);
   renderMenu();
   show("menuScreen");
 }
 
 function logout() {
-  if (currentUser && currentUser.provider !== "email" && fbAuth) fbAuth.signOut().catch(() => {});
-  currentUser = null;
-  store.del("snail_session");
+  const wasLocal = currentUser && currentUser.local;
+  currentUser = null; profile = null;
+  store.del("snail_local_guest");
   $("pwInput").value = "";
   setMsg("");
+  if (fbAuth && !wasLocal) fbAuth.signOut().catch(() => {});
   show("loginScreen");
 }
 
@@ -495,83 +520,77 @@ function renderMenu() {
     av.textContent = (u.name || "?")[0].toUpperCase();
   }
   $("profileName").textContent = u.name;
-  $("profileEmail").textContent = (u.provider === "google" ? "Google · " + u.email : u.provider === "guest" ? "👤 게스트 · 로그아웃하면 기록이 연결되지 않아요" : "이메일 · " + u.email);
-  const best = getBest();
-  $("bestText").textContent = best ? `최고 기록: ${best.days}일 생존 · ${fmtMoney(best.money)}` : "아직 기록이 없습니다. 얼마나 버틸 수 있을까요?";
+  $("profileEmail").textContent =
+    u.provider === "google" ? "Google · " + u.email + " · ☁️ 자동 저장" :
+    u.provider === "email" ? "이메일 · " + u.email + " · ☁️ 자동 저장" :
+    "👤 게스트 · 이 브라우저에서만 이어집니다";
+  const b = profile.best;
+  $("bestText").textContent = b
+    ? `최고 기록: ${b.days}일 생존 · ${fmtMoney(b.money)} · 총 ${profile.plays}판`
+    : "아직 기록이 없습니다. 얼마나 버틸 수 있을까요?";
 }
 
-/* ---------------- 기록 ---------------- */
-function getScores() { return store.get("snail_scores", []); }
-function getBest() {
-  if (!currentUser) return null;
-  return getScores().filter(s => s.uid === currentUser.id).sort((a, b) => b.days - a.days || b.money - a.money)[0] || null;
-}
-function saveScore(days, money) {
-  const scores = getScores();
-  scores.push({ uid: currentUser.id, name: currentUser.name, days, money, at: Date.now() });
-  scores.sort((a, b) => b.days - a.days || b.money - a.money);
-  store.set("snail_scores", scores.slice(0, 100));
-  submitGlobal();
-}
+/* ---------------- 진행상황 저장 (Firestore users/{uid}) ---------------- */
+const profileKey = () => "snail_profile_" + currentUser.id;
+const newProfile = () => ({ name: currentUser.name, best: null, plays: 0, totalDays: 0, runs: [], muted: false });
+const useCloud = () => db && currentUser && !currentUser.local;
 
-/* ---------------- 전체 순위 (Firebase Firestore REST) ---------------- */
-const FS_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE.projectId}/databases/(default)/documents`;
-
-// 이메일/구글 ID를 그대로 올리지 않도록 해시한 값을 문서 ID로 사용
-async function myDocId() {
-  return (await sha256("snail:" + currentUser.id)).slice(0, 24);
-}
-
-// 내 최고 기록을 전체 순위에 올림 (서버 규칙이 더 좋은 기록일 때만 덮어쓰기 허용)
-async function submitGlobal() {
-  const best = getBest();
-  if (!best) return;
+async function loadProfile() {
+  const cached = store.get(profileKey(), null);
+  if (!useCloud()) return cached || newProfile();
   try {
-    const id = await myDocId();
-    await fetch(`${FS_BASE}/scores/${id}?key=${FIREBASE.apiKey}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fields: {
-        name: { stringValue: String(currentUser.name || "익명").slice(0, 16) },
-        days: { integerValue: String(best.days) },
-        money: { integerValue: String(Math.floor(best.money)) },
-        at: { timestampValue: new Date().toISOString() },
-      } }),
-    });
-  } catch {}
+    const snap = await db.collection("users").doc(currentUser.id).get();
+    if (snap.exists) {
+      const { updatedAt, ...data } = snap.data();
+      const p = { ...newProfile(), ...data };
+      store.set(profileKey(), p);
+      return p;
+    }
+    const p = cached || newProfile();
+    saveProfile(p);
+    return p;
+  } catch {
+    return cached || newProfile();
+  }
 }
 
-async function fetchGlobal() {
-  const res = await fetch(`${FS_BASE}:runQuery?key=${FIREBASE.apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ structuredQuery: {
-      from: [{ collectionId: "scores" }],
-      orderBy: [{ field: { fieldPath: "days" }, direction: "DESCENDING" }],
-      limit: 20,
-    } }),
-  });
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  const rows = await res.json();
-  return rows.filter(r => r.document).map(r => {
-    const f = r.document.fields;
-    return {
-      id: r.document.name.split("/").pop(),
-      name: f.name.stringValue,
-      days: Number(f.days.integerValue),
-      money: Number(f.money.integerValue),
-    };
-  });
+function saveProfile(p = profile) {
+  if (!currentUser || !p) return;
+  store.set(profileKey(), p);
+  if (!useCloud()) return;
+  db.collection("users").doc(currentUser.id)
+    .set({ ...p, updatedAt: firebase.firestore.FieldValue.serverTimestamp() })
+    .catch(() => {});
 }
 
-function drawBoardRows(list, scores, isMe) {
+// 한 판 기록 저장. 최고 기록이면 true
+function recordRun(days, money) {
+  money = Math.floor(money);
+  const prev = profile.best;
+  const isBest = !prev || days > prev.days || (days === prev.days && money > prev.money);
+  profile.plays += 1;
+  profile.totalDays += days;
+  profile.runs = [{ days, money, at: Date.now() }, ...profile.runs].slice(0, 20);
+  if (isBest) profile.best = { days, money };
+  saveProfile();
+  if (isBest && useCloud()) {
+    db.collection("scores").doc(currentUser.id).set({
+      name: currentUser.name.slice(0, 16), days, money,
+      at: firebase.firestore.FieldValue.serverTimestamp(),
+    }).catch(() => {});
+  }
+  return isBest;
+}
+
+/* ---------------- 명예의 전당 (Firestore scores/{uid}) ---------------- */
+function drawBoardRows(list, scores) {
   scores.forEach((s, i) => {
     const row = document.createElement("div");
     row.className = "item";
     const medal = ["🥇", "🥈", "🥉"][i] || (i + 1);
     row.innerHTML = `<span class="rank"></span><span class="who"></span><span class="score"></span>`;
     row.children[0].textContent = medal;
-    row.children[1].textContent = s.name + (isMe(s) ? " (나)" : "");
+    row.children[1].textContent = s.name + (s.id === currentUser.id ? " (나)" : "");
     row.children[2].textContent = `${s.days}일 · ${fmtMoney(s.money)}`;
     list.appendChild(row);
   });
@@ -580,30 +599,21 @@ function drawBoardRows(list, scores, isMe) {
 async function renderBoard() {
   const list = $("boardList");
   const note = $("boardNote");
+  const empty = '<p class="subtitle" style="text-align:center">아직 아무도 달팽이에게 잡히지 않았습니다.</p>';
   list.innerHTML = '<p class="subtitle" style="text-align:center">전체 순위 불러오는 중...</p>';
   note.textContent = "";
   try {
-    await submitGlobal();
-    const [scores, me] = await Promise.all([fetchGlobal(), myDocId()]);
-    list.innerHTML = "";
-    if (!scores.length) {
-      list.innerHTML = '<p class="subtitle" style="text-align:center">아직 아무도 달팽이에게 잡히지 않았습니다.</p>';
-      return;
-    }
-    scores.sort((a, b) => b.days - a.days || b.money - a.money);
-    drawBoardRows(list, scores, s => s.id === me);
+    if (!db) throw new Error("no db");
+    const snap = await db.collection("scores").orderBy("days", "desc").limit(20).get();
+    const scores = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => b.days - a.days || b.money - a.money);
+    list.innerHTML = scores.length ? "" : empty;
+    drawBoardRows(list, scores);
     note.textContent = "🌍 전체 플레이어 순위";
   } catch {
-    // 오프라인이거나 서버 오류면 이 기기 기록으로 대체
-    list.innerHTML = "";
-    const seen = new Set();
-    const scores = getScores().filter(s => !seen.has(s.uid) && seen.add(s.uid)).slice(0, 10);
-    if (!scores.length) {
-      list.innerHTML = '<p class="subtitle" style="text-align:center">아직 아무도 달팽이에게 잡히지 않았습니다.</p>';
-    } else {
-      drawBoardRows(list, scores, s => currentUser && s.uid === currentUser.id);
-    }
-    note.textContent = "📱 전체 순위를 불러오지 못해 이 기기 기록만 표시합니다";
+    list.innerHTML = profile.best ? "" : empty;
+    if (profile.best) drawBoardRows(list, [{ id: currentUser.id, name: currentUser.name, ...profile.best }]);
+    note.textContent = "📱 전체 순위를 불러오지 못해 내 기록만 표시합니다";
   }
 }
 
@@ -619,12 +629,13 @@ $("pauseBtn").onclick = pause;
 
 /* ---------------- 사운드 ---------------- */
 let audioCtx = null;
-let muted = store.get("snail_muted", false);
-$("muteBtn").textContent = muted ? "🔇" : "🔊";
-$("muteBtn").onclick = () => {
-  muted = !muted; store.set("snail_muted", muted);
+let muted = false;
+function setMuted(v, save = true) {
+  muted = v;
   $("muteBtn").textContent = muted ? "🔇" : "🔊";
-};
+  if (save && profile) { profile.muted = muted; saveProfile(); }
+}
+$("muteBtn").onclick = () => setMuted(!muted);
 function beep(freq, dur, type = "sine", vol = 0.08) {
   if (muted) return;
   try {
@@ -744,10 +755,8 @@ function gameOver() {
   beep(90, 0.9, "sawtooth", 0.12);
   const days = Math.floor(game.t);
   const money = game.money;
-  const prev = getBest();
-  saveScore(days, money);
-  const isBest = !prev || days > prev.days || (days === prev.days && money > prev.money);
-  const best = getBest();
+  const isBest = recordRun(days, money);
+  const best = profile.best;
   $("overDays").textContent = days + "일";
   $("overMoney").textContent = fmtMoney(money);
   $("overDist").textContent = Math.floor(game.traveled / 10).toLocaleString() + "m";
@@ -1433,9 +1442,22 @@ function drawSnail(s) {
 }
 
 /* ---------------- 시작 ---------------- */
-setupGoogleButton();
-const saved = store.get("snail_session", null);
-if (saved) { currentUser = saved; renderMenu(); show("menuScreen"); }
+// 예전 버전의 계정·세션·기록을 한 번 모두 삭제
+if (store.get("snail_data_version", 1) < 2) {
+  ["snail_users", "snail_session", "snail_scores", "snail_muted"].forEach(k => store.del(k));
+  store.set("snail_data_version", 2);
+}
+if (fbAuth) {
+  fbAuth.getRedirectResult().catch(showAuthError);
+  // 로그인 상태가 바뀌면(새로고침, 다른 브라우저 로그인 포함) 계정의 진행상황을 불러옴
+  fbAuth.onAuthStateChanged(u => {
+    if (u) enter(userFrom(u));
+    else if (!currentUser || !currentUser.local) { currentUser = null; profile = null; show("loginScreen"); }
+  });
+} else {
+  const local = store.get("snail_local_guest", null);
+  local ? enter(local) : show("loginScreen");
+}
 </script>
 </body>
 </html>
