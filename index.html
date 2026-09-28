@@ -187,6 +187,40 @@
   .stat .label { color: var(--muted); font-size: 12px; }
   .stat .val { font-size: 20px; font-weight: 800; margin-top: 4px; }
   .newbest { color: var(--gold); font-weight: 700; margin-bottom: 12px; }
+  .stat-grid.three { grid-template-columns: 1fr 1fr 1fr; }
+  .stat-grid.three .val { font-size: 16px; }
+  .wallet { font-size: 22px; font-weight: 800; color: var(--gold); margin-bottom: 4px; }
+
+  /* 상점 */
+  .shop { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 16px; max-height: 52vh; overflow-y: auto; text-align: left; }
+  .shop-item { display: flex; align-items: center; gap: 12px; background: var(--panel-2); border-radius: 12px; padding: 10px 12px; }
+  .shop-item .ic { font-size: 28px; width: 36px; text-align: center; flex-shrink: 0; }
+  .shop-item .info { flex: 1; min-width: 0; }
+  .shop-item .nm { font-weight: 700; font-size: 15px; }
+  .shop-item .ds { color: var(--muted); font-size: 12px; line-height: 1.4; }
+  .shop-item .own { color: var(--accent); font-size: 12px; margin-top: 2px; }
+  .shop-item button {
+    flex-shrink: 0; border: none; border-radius: 8px; padding: 8px 10px; min-width: 92px;
+    background: var(--gold); color: #1a1405; font-weight: 800; font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  .shop-item button:disabled { background: #3a4634; color: var(--muted); cursor: default; }
+
+  /* 게임 중 아이템 바 */
+  #itemBar {
+    position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%);
+    display: flex; gap: 8px; align-items: flex-end;
+  }
+  #itemBar button {
+    position: relative; width: 58px; height: 58px; border-radius: 14px;
+    background: rgba(12,16,10,.75); border: 1px solid rgba(255,255,255,.15);
+    font-size: 26px; cursor: pointer; font-family: inherit; color: #fff;
+  }
+  #itemBar button:disabled { opacity: .35; }
+  #itemBar .cnt { position: absolute; right: 4px; bottom: 2px; font-size: 12px; font-weight: 800; }
+  #itemBar kbd { position: absolute; left: 5px; top: 3px; font-size: 10px; color: var(--muted); font-family: inherit; }
+  #itemBar .shield { width: 44px; height: 44px; font-size: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: rgba(12,16,10,.75); border: 1px solid rgba(255,255,255,.15); position: relative; }
+  @media (hover: none) and (pointer: coarse) { #itemBar kbd { display: none; } #itemBar { left: 16px; transform: none; } }
 </style>
 </head>
 <body>
@@ -238,9 +272,11 @@
       "100만 달러를 줄게. 대신 불멸의 달팽이가 평생 너를 쫓아올 거야.
       달팽이에게 닿으면 넌 죽어. 달팽이는 절대 멈추지 않고, 언제나 네 위치를 알고 있어."
     </div>
+    <div class="wallet" id="walletText"></div>
     <div class="best" id="bestText"></div>
     <div class="stack">
       <button class="btn btn-primary" id="startBtn">▶ 게임 시작</button>
+      <button class="btn btn-ghost" id="shopBtn" style="color:var(--gold);border-color:#6b5a1e">🛒 상점</button>
       <button class="btn btn-ghost" id="howtoBtn">조작법</button>
       <button class="btn btn-ghost" id="boardBtn">🏆 명예의 전당</button>
       <button class="btn btn-ghost" id="logoutBtn">로그아웃</button>
@@ -256,7 +292,10 @@
       <b>이동</b> — WASD / 방향키 (모바일: 화면 드래그)<br>
       <b>질주</b> — Shift 누르고 이동 (스태미나 소모)<br>
       <b>대시</b> — Space (모바일: 대시 버튼), 쿨타임 3초<br>
-      <b>일시정지</b> — P / Esc<br><br>
+      <b>일시정지</b> — P / Esc<br>
+      <b>아이템</b> — 1 소금 폭탄 · 2 넉백 샷건 · 3 순간이동 (모바일: 아래 버튼)<br>
+      🛡️ <b>방패</b>는 달팽이에게 닿거나 포탄에 맞을 때 자동으로 한 번 막아줍니다.<br><br>
+      💵 처음에 받은 돈과 도망치며 번 돈(하루 $10,000 + 돈가방)은 계속 쌓이고, <b>상점</b>에서 쓸 수 있습니다.<br><br>
       💰 <b>돈가방</b> — +$100,000<br>
       🧂 <b>소금</b> — 달팽이 4초간 크게 느려짐 (죽지는 않음)<br>
       ☕ <b>커피</b> — 스태미나 회복 + 5초간 속도 증가<br><br>
@@ -265,6 +304,17 @@
       🚀 <b>45일</b>부터 로켓 부스터로 순간 가속<br>
       🔫 <b>90일</b>부터 로켓포 발사 — 피하세요!
     </div>
+    <button class="btn btn-primary" data-back>돌아가기</button>
+  </div>
+</section>
+
+<!-- ============ 상점 ============ -->
+<section class="screen" id="shopScreen">
+  <div class="card">
+    <h2>🛒 상점</h2>
+    <p class="subtitle" style="margin-bottom:6px">받은 돈과 도망치며 번 돈으로 살아남을 도구를 사세요.</p>
+    <div class="wallet" id="shopWallet"></div>
+    <div class="shop" id="shopList"></div>
     <button class="btn btn-primary" data-back>돌아가기</button>
   </div>
 </section>
@@ -286,14 +336,17 @@
     <div class="gameover-title" id="overTitle">달팽이가 당신에게 닿았습니다</div>
     <p class="subtitle" id="overQuote"></p>
     <div class="newbest" id="newBest" style="display:none">🎉 개인 최고 기록!</div>
-    <div class="stat-grid">
+    <div class="stat-grid three">
       <div class="stat"><div class="label">생존 기간</div><div class="val" id="overDays"></div></div>
-      <div class="stat"><div class="label">최종 자산</div><div class="val" style="color:var(--gold)" id="overMoney"></div></div>
+      <div class="stat"><div class="label">이번에 번 돈</div><div class="val" style="color:var(--accent)" id="overEarned"></div></div>
+      <div class="stat"><div class="label">보유 자산</div><div class="val" style="color:var(--gold)" id="overMoney"></div></div>
       <div class="stat"><div class="label">도망친 거리</div><div class="val" id="overDist"></div></div>
       <div class="stat"><div class="label">최고 기록</div><div class="val" id="overBest"></div></div>
+      <div class="stat"><div class="label">총 플레이</div><div class="val" id="overPlays"></div></div>
     </div>
     <div class="stack">
       <button class="btn btn-primary" id="retryBtn">다시 도망치기</button>
+      <button class="btn btn-ghost" id="overShopBtn" style="color:var(--gold);border-color:#6b5a1e">🛒 상점</button>
       <button class="btn btn-ghost" id="toMenuBtn">메인 메뉴</button>
     </div>
   </div>
@@ -331,6 +384,12 @@
   </div>
   <div id="toast"></div>
   <button id="dashBtn">대시</button>
+  <div id="itemBar">
+    <button data-item="salt"><kbd>1</kbd>🧂<span class="cnt"></span></button>
+    <button data-item="gun"><kbd>2</kbd>🔫<span class="cnt"></span></button>
+    <button data-item="tp"><kbd>3</kbd>🌀<span class="cnt"></span></button>
+    <div class="shield" title="방패">🛡️<span class="cnt" style="position:absolute;right:0;bottom:-2px;font-size:11px;font-weight:800"></span></div>
+  </div>
 </div>
 
 <script>
@@ -524,6 +583,7 @@ function renderMenu() {
     u.provider === "google" ? "Google · " + u.email + " · ☁️ 자동 저장" :
     u.provider === "email" ? "이메일 · " + u.email + " · ☁️ 자동 저장" :
     "👤 게스트 · 이 브라우저에서만 이어집니다";
+  $("walletText").textContent = "💵 " + fmtMoney(profile.wallet);
   const b = profile.best;
   $("bestText").textContent = b
     ? `최고 기록: ${b.days}일 생존 · ${fmtMoney(b.money)} · 총 ${profile.plays}판`
@@ -532,7 +592,11 @@ function renderMenu() {
 
 /* ---------------- 진행상황 저장 (Firestore users/{uid}) ---------------- */
 const profileKey = () => "snail_profile_" + currentUser.id;
-const newProfile = () => ({ name: currentUser.name, best: null, plays: 0, totalDays: 0, runs: [], muted: false });
+const GIFT = 1000000; // 처음 받는 돈
+const newProfile = () => ({
+  name: currentUser.name, best: null, plays: 0, totalDays: 0, runs: [], muted: false,
+  wallet: GIFT, inv: { salt: 0, gun: 0, tp: 0, shield: 0 }, upg: { shoes: 0, lungs: 0 },
+});
 const useCloud = () => db && currentUser && !currentUser.local;
 
 async function loadProfile() {
@@ -542,7 +606,8 @@ async function loadProfile() {
     const snap = await db.collection("users").doc(currentUser.id).get();
     if (snap.exists) {
       const { updatedAt, ...data } = snap.data();
-      const p = { ...newProfile(), ...data };
+      const base = newProfile();
+      const p = { ...base, ...data, inv: { ...base.inv, ...data.inv }, upg: { ...base.upg, ...data.upg } };
       store.set(profileKey(), p);
       return p;
     }
@@ -582,6 +647,65 @@ function recordRun(days, money) {
   return isBest;
 }
 
+/* ---------------- 상점 ---------------- */
+const SHOP = [
+  { id: "salt",   icon: "🧂", name: "소금 폭탄",     desc: "달팽이를 5초 동안 크게 느리게 만듭니다. [1]", price: 200000 },
+  { id: "gun",    icon: "🔫", name: "넉백 샷건",     desc: "가까이 온 달팽이를 멀리 날려버립니다. 죽지는 않아요. [2]", price: 400000 },
+  { id: "tp",     icon: "🌀", name: "순간이동 장치", desc: "달팽이 반대쪽으로 멀리 순간이동합니다. [3]", price: 700000 },
+  { id: "shield", icon: "🛡️", name: "방패",          desc: "달팽이나 포탄에 맞아도 한 번 버팁니다. 자동 사용.", price: 1200000 },
+  { id: "shoes",  icon: "👟", name: "러닝화",        desc: "이동 속도 +8% (레벨마다, 영구)", prices: [500000, 1000000, 2000000] },
+  { id: "lungs",  icon: "🫁", name: "폐활량 훈련",   desc: "질주할 때 스태미나 소모 -20% (레벨마다, 영구)", prices: [400000, 800000, 1600000] },
+];
+const MAX_STACK = 20;
+
+function priceOf(it) {
+  if (!it.prices) return profile.inv[it.id] >= MAX_STACK ? null : it.price;
+  const lv = profile.upg[it.id] || 0;
+  return lv >= it.prices.length ? null : it.prices[lv];
+}
+
+function renderShop() {
+  $("shopWallet").textContent = "💵 " + fmtMoney(profile.wallet);
+  const list = $("shopList");
+  list.innerHTML = "";
+  for (const it of SHOP) {
+    const price = priceOf(it);
+    const row = document.createElement("div");
+    row.className = "shop-item";
+    row.innerHTML = `<div class="ic"></div><div class="info"><div class="nm"></div><div class="ds"></div><div class="own"></div></div><button></button>`;
+    row.querySelector(".ic").textContent = it.icon;
+    row.querySelector(".nm").textContent = it.name;
+    row.querySelector(".ds").textContent = it.desc;
+    row.querySelector(".own").textContent = it.prices
+      ? `레벨 ${profile.upg[it.id] || 0} / ${it.prices.length}`
+      : `보유 ${profile.inv[it.id] || 0}개`;
+    const btn = row.querySelector("button");
+    btn.textContent = price === null ? (it.prices ? "최대 레벨" : "가득 참") : fmtMoney(price);
+    btn.disabled = price === null || profile.wallet < price;
+    btn.onclick = () => buy(it);
+    list.appendChild(row);
+  }
+}
+
+function buy(it) {
+  const price = priceOf(it);
+  if (price === null || profile.wallet < price) return;
+  profile.wallet -= price;
+  if (it.prices) profile.upg[it.id] = (profile.upg[it.id] || 0) + 1;
+  else profile.inv[it.id] = (profile.inv[it.id] || 0) + 1;
+  saveProfile();
+  beep(880, 0.1, "square", 0.05); setTimeout(() => beep(1320, 0.12, "square", 0.05), 60);
+  renderShop();
+}
+
+function openShop(from) {
+  prevScreen = from;
+  $("game").classList.remove("active");
+  renderMenu();
+  renderShop();
+  show("shopScreen");
+}
+
 /* ---------------- 명예의 전당 (Firestore scores/{uid}) ---------------- */
 function drawBoardRows(list, scores) {
   scores.forEach((s, i) => {
@@ -618,13 +742,15 @@ async function renderBoard() {
 }
 
 $("startBtn").onclick = startGame;
+$("shopBtn").onclick = () => openShop("menuScreen");
+$("overShopBtn").onclick = () => openShop("menuScreen");
 $("howtoBtn").onclick = () => { prevScreen = "menuScreen"; show("howtoScreen"); };
 $("boardBtn").onclick = () => { prevScreen = "menuScreen"; renderBoard(); show("boardScreen"); };
 $("logoutBtn").onclick = logout;
 $("retryBtn").onclick = startGame;
 $("toMenuBtn").onclick = () => { $("game").classList.remove("active"); renderMenu(); show("menuScreen"); };
 $("resumeBtn").onclick = resume;
-$("quitBtn").onclick = () => { game.running = false; $("game").classList.remove("active"); renderMenu(); show("menuScreen"); };
+$("quitBtn").onclick = () => { finishRun(); $("game").classList.remove("active"); renderMenu(); show("menuScreen"); };
 $("pauseBtn").onclick = pause;
 
 /* ---------------- 사운드 ---------------- */
@@ -721,15 +847,17 @@ function startGame() {
   const ang = Math.random() * Math.PI * 2;
   Object.assign(game, {
     running: true, paused: false,
-    t: 0, money: 1000000, bonus: 0, traveled: 0,
-    player: { x: 0, y: 0, vx: 0, vy: 0, face: 1, anim: 0, stamina: 1, dashCd: 0, dashT: 0, boostT: 0, dirX: 1, dirY: 0 },
-    snail: { x: Math.cos(ang) * 700, y: Math.sin(ang) * 700, base: 55, slowT: 0, dir: 0, wob: 0, phase: 1, boostT: 0, boostCd: 4, fireCd: 3, sayT: 0, sayCd: 1.5, say: "" },
+    t: 0, money: profile.wallet, earned: 0, bonus: 0, traveled: 0, finished: false,
+    inv: { ...profile.inv }, speedMul: 1 + 0.08 * (profile.upg.shoes || 0), drainMul: 1 - 0.2 * (profile.upg.lungs || 0),
+    player: { x: 0, y: 0, vx: 0, vy: 0, face: 1, anim: 0, stamina: 1, dashCd: 0, dashT: 0, boostT: 0, dirX: 1, dirY: 0, invulnT: 0 },
+    snail: { x: Math.cos(ang) * 700, y: Math.sin(ang) * 700, base: 55, slowT: 0, dir: 0, wob: 0, phase: 1, boostT: 0, boostCd: 4, fireCd: 3, sayT: 0, sayCd: 1.5, say: "", kx: 0, ky: 0, stunT: 0 },
     items: [], trail: [], particles: [], popups: [], rockets: [], deathBy: "touch",
     itemTimer: 0, shake: 0, lastBeat: 0,
   });
   // 시작 위치 주변 장애물 치우기
   nearbyChunks(0, 0, 100).forEach(c => c.obs = c.obs.filter(o => Math.hypot(o.x, o.y) > 90));
   for (let i = 0; i < 8; i++) spawnItem(true);
+  updateItemBar();
   show(null);
   $("game").classList.add("active");
   toast("달팽이가 다가오고 있습니다... 도망치세요!");
@@ -750,14 +878,26 @@ function resume() {
   requestAnimationFrame(loop);
 }
 
-function gameOver() {
+// 판이 끝나면 번 돈과 남은 아이템을 계정에 반영
+function finishRun() {
   game.running = false;
+  if (game.finished) return;
+  game.finished = true;
+  profile.wallet += game.earned;
+  profile.inv = { ...game.inv };
+  saveProfile();
+}
+
+function gameOver() {
+  finishRun();
   beep(90, 0.9, "sawtooth", 0.12);
   const days = Math.floor(game.t);
-  const money = game.money;
+  const money = profile.wallet;
   const isBest = recordRun(days, money);
   const best = profile.best;
   $("overDays").textContent = days + "일";
+  $("overEarned").textContent = "+" + fmtMoney(game.earned);
+  $("overPlays").textContent = profile.plays + "판";
   $("overMoney").textContent = fmtMoney(money);
   $("overDist").textContent = Math.floor(game.traveled / 10).toLocaleString() + "m";
   $("overBest").textContent = best.days + "일";
@@ -841,6 +981,8 @@ window.addEventListener("keydown", e => {
   keys[e.code] = true;
   if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
   if (e.code === "Space") tryDash();
+  const n = { Digit1: "salt", Digit2: "gun", Digit3: "tp", Numpad1: "salt", Numpad2: "gun", Numpad3: "tp" }[e.code];
+  if (n) useItem(n);
   if (e.code === "KeyP" || e.code === "Escape") game.paused ? resume() : pause();
 });
 window.addEventListener("keyup", e => keys[e.code] = false);
@@ -860,6 +1002,67 @@ const endStick = e => { if (e.pointerId === stick.id) stick.active = false; };
 window.addEventListener("pointerup", endStick);
 window.addEventListener("pointercancel", endStick);
 $("dashBtn").addEventListener("pointerdown", e => { e.stopPropagation(); tryDash(); });
+document.querySelectorAll("#itemBar button").forEach(b =>
+  b.addEventListener("pointerdown", e => { e.stopPropagation(); e.preventDefault(); useItem(b.dataset.item); }));
+
+function updateItemBar() {
+  document.querySelectorAll("#itemBar button").forEach(b => {
+    const n = game.inv[b.dataset.item] || 0;
+    b.querySelector(".cnt").textContent = n;
+    b.disabled = n <= 0;
+  });
+  const sh = document.querySelector("#itemBar .shield");
+  sh.style.display = game.inv.shield > 0 ? "flex" : "none";
+  sh.querySelector(".cnt").textContent = game.inv.shield;
+}
+
+function burst(x, y, n, color, speed = 160, life = 0.5) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, v = speed * (0.3 + Math.random() * 0.7);
+    game.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life, max: life, c: color });
+  }
+}
+
+// 달팽이를 플레이어 반대 방향으로 밀어냄 (불멸이라 죽지는 않음)
+function knockSnail(power, stun) {
+  const p = game.player, s = game.snail;
+  const dx = s.x - p.x, dy = s.y - p.y, d = Math.hypot(dx, dy) || 1;
+  s.kx = dx / d * power; s.ky = dy / d * power; s.stunT = stun;
+}
+
+function useItem(id) {
+  if (!game.running || game.paused) return;
+  const p = game.player, s = game.snail;
+  if (!game.inv[id]) { toast("아이템이 없습니다. 상점에서 사세요!"); return; }
+  const dist = Math.hypot(s.x - p.x, s.y - p.y);
+  if (id === "salt") {
+    s.slowT = 5;
+    burst(s.x, s.y - 10, 30, "#ffffff", 140, 0.8);
+    toast("🧂 소금 폭탄! 달팽이가 느려졌다");
+    beep(500, 0.25, "triangle");
+  } else if (id === "gun") {
+    if (dist > 380) { toast("🔫 너무 멀어요! 가까이 왔을 때 쏘세요"); return; }
+    knockSnail(1400, 1.2);
+    const a = Math.atan2(s.y - p.y, s.x - p.x);
+    for (let i = 0; i < 14; i++) {
+      const sp = a + (Math.random() - .5) * 0.5, v = 300 + Math.random() * 300;
+      game.particles.push({ x: p.x, y: p.y - 6, vx: Math.cos(sp) * v, vy: Math.sin(sp) * v, life: 0.25, max: 0.25, c: "#ffd84a" });
+    }
+    burst(s.x, s.y - 10, 16, "#f4a7c0", 200, 0.5);
+    game.shake = 8;
+    s.say = "kill you!!"; s.sayT = 1.2;
+    beep(90, 0.3, "sawtooth", 0.12); beep(160, 0.15, "square", 0.08);
+  } else if (id === "tp") {
+    const dx = p.x - s.x, dy = p.y - s.y, d = Math.hypot(dx, dy) || 1;
+    burst(p.x, p.y - 8, 24, "#b69cf0", 150, 0.6);
+    p.x += dx / d * 520; p.y += dy / d * 520; p.vx = p.vy = 0;
+    burst(p.x, p.y - 8, 24, "#b69cf0", 150, 0.6);
+    toast("🌀 순간이동!");
+    beep(1200, 0.2, "sine"); setTimeout(() => beep(600, 0.2, "sine"), 80);
+  }
+  game.inv[id]--;
+  updateItemBar();
+}
 
 function tryDash() {
   const p = game.player;
@@ -905,10 +1108,10 @@ function update(dt) {
   // 질주: Shift 또는 조이스틱을 멀리 당김
   const wantSprint = len > 0 && (keys.ShiftLeft || keys.ShiftRight || stickMag >= 0.95);
   const sprinting = wantSprint && p.stamina > 0.02;
-  if (sprinting) p.stamina = Math.max(0, p.stamina - dt * 0.28);
+  if (sprinting) p.stamina = Math.max(0, p.stamina - dt * 0.28 * game.drainMul);
   else p.stamina = Math.min(1, p.stamina + dt * (len > 0 ? 0.12 : 0.22));
 
-  let speed = sprinting ? SPRINT : WALK;
+  let speed = (sprinting ? SPRINT : WALK) * game.speedMul;
   if (p.boostT > 0) { speed *= 1.35; p.boostT -= dt; }
   if (p.dashT > 0) { speed = DASH; p.dashT -= dt; if (len === 0) { ix = p.dirX; iy = p.dirY; } }
   p.dashCd = Math.max(0, p.dashCd - dt);
@@ -972,6 +1175,11 @@ function update(dt) {
     }
   }
   if (s.slowT > 0) sspd *= 0.25;
+  // 샷건/방패 넉백
+  if (s.stunT > 0) { s.stunT -= dt; sspd = 0; }
+  s.x += s.kx * dt; s.y += s.ky * dt;
+  const kd = Math.pow(0.02, dt); s.kx *= kd; s.ky *= kd;
+  p.invulnT = Math.max(0, p.invulnT - dt);
   // 너무 멀어지면 따라잡는 속도 (그래도 절대 순간이동은 안 함)
   if (sd > 1400) sspd *= 1.8;
   if (sd > 0) { s.x += sdx / sd * sspd * dt; s.y += sdy / sd * sspd * dt; }
@@ -989,6 +1197,8 @@ function update(dt) {
     if (hitsObstacle(r.x, r.y, 4)) { r.life = 0; explode(r.x, r.y); }
     else if (Math.hypot(r.x - p.x, r.y - p.y) < PLAYER_R + 7) {
       r.life = 0; explode(r.x, r.y);
+      if (p.invulnT > 0) continue;
+      if (useShield()) continue;
       game.deathBy = "rocket"; game.shake = 16; gameOver(); return;
     }
     else if (r.life <= 0) explode(r.x, r.y);
@@ -1002,7 +1212,8 @@ function update(dt) {
   while (game.trail.length && game.trail[0].life <= 0) game.trail.shift();
 
   // 돈 (시간에 따라 이자 수익)
-  game.money = 1000000 + game.bonus + Math.floor(game.t) * 10000;
+  game.earned = game.bonus + Math.floor(game.t) * 10000;
+  game.money = profile.wallet + game.earned;
 
   // 아이템
   game.itemTimer -= dt;
@@ -1028,10 +1239,10 @@ function update(dt) {
   }
   game.shake *= 0.9;
 
-  // 충돌 = 죽음
-  if (dist < PLAYER_R + SNAIL_R - 4) {
-    game.shake = 14;
-    gameOver();
+  // 충돌 = 죽음 (방패가 있으면 한 번 버팀)
+  if (dist < PLAYER_R + SNAIL_R - 4 && p.invulnT <= 0) {
+    if (useShield()) knockSnail(1100, 1);
+    else { game.shake = 14; gameOver(); return; }
   }
 
   // 이정표 알림
@@ -1049,11 +1260,25 @@ function update(dt) {
   $("dashBtn").style.opacity = p.dashCd > 0 ? 0.35 : 1;
 }
 
+function useShield() {
+  if (!game.inv.shield) return false;
+  game.inv.shield--;
+  game.player.invulnT = 1.5;
+  game.shake = 10;
+  burst(game.player.x, game.player.y - 10, 26, "#5cc8ff", 180, 0.6);
+  toast("🛡️ 방패가 막아줬다! (남은 방패 " + game.inv.shield + ")");
+  beep(700, 0.3, "triangle", 0.1);
+  updateItemBar();
+  return true;
+}
+
 /* ---------------- 그리기 ---------------- */
 function draw() {
   const p = game.player, s = game.snail;
-  const camX = p.x - W / 2 + (Math.random() - .5) * game.shake;
-  const camY = p.y - H / 2 + (Math.random() - .5) * game.shake;
+  // 화면 확대 (작은 화면은 덜 확대해서 시야 확보)
+  const Z = W < 600 ? 1.15 : 1.35, VW = W / Z, VH = H / Z;
+  const camX = p.x - VW / 2 + (Math.random() - .5) * game.shake;
+  const camY = p.y - VH / 2 + (Math.random() - .5) * game.shake;
 
   // 바닥
   ctx.fillStyle = "#4f7a3a";
@@ -1061,15 +1286,17 @@ function draw() {
   // 잔디 체크 무늬
   const tile = 80;
   ctx.fillStyle = "#4a7336";
+  ctx.save();
+  ctx.scale(Z, Z);
   const sx = Math.floor(camX / tile), sy = Math.floor(camY / tile);
-  for (let x = sx; x <= sx + W / tile + 1; x++) for (let y = sy; y <= sy + H / tile + 1; y++) {
+  for (let x = sx; x <= sx + VW / tile + 1; x++) for (let y = sy; y <= sy + VH / tile + 1; y++) {
     if ((x + y) % 2 === 0) ctx.fillRect(x * tile - camX, y * tile - camY, tile, tile);
   }
 
   ctx.save();
   ctx.translate(-camX, -camY);
 
-  const chunks = nearbyChunks(p.x, p.y, Math.max(W, H));
+  const chunks = nearbyChunks(p.x, p.y, Math.max(VW, VH));
   // 장식
   for (const c of chunks) for (const d of c.deco) {
     if (d.t === "grass") {
@@ -1135,6 +1362,7 @@ function draw() {
   }
   ctx.globalAlpha = 1;
   ctx.restore();
+  ctx.restore();
 
   // 위험 비네트
   const dist = Math.hypot(p.x - s.x, p.y - s.y);
@@ -1147,7 +1375,7 @@ function draw() {
   }
 
   // 화면 밖 달팽이 방향 표시
-  const ssx = s.x - camX, ssy = s.y - camY;
+  const ssx = (s.x - camX) * Z, ssy = (s.y - camY) * Z;
   const margin = 36;
   if (ssx < 0 || ssx > W || ssy < 0 || ssy > H) {
     const ang = Math.atan2(ssy - H / 2, ssx - W / 2);
@@ -1180,11 +1408,11 @@ function draw() {
   // 소금 효과 표시
   if (s.slowT > 0) {
     ctx.fillStyle = "rgba(255,255,255,.9)"; ctx.font = "bold 13px sans-serif"; ctx.textAlign = "center";
-    ctx.fillText(`🧂 달팽이 둔화 ${s.slowT.toFixed(1)}s`, W / 2, H - 30);
+    ctx.fillText(`🧂 달팽이 둔화 ${s.slowT.toFixed(1)}s`, W / 2, H - 100);
   }
   if (p.boostT > 0) {
     ctx.fillStyle = "rgba(255,230,200,.9)"; ctx.font = "bold 13px sans-serif"; ctx.textAlign = "center";
-    ctx.fillText(`☕ 카페인 ${p.boostT.toFixed(1)}s`, W / 2, H - (s.slowT > 0 ? 50 : 30));
+    ctx.fillText(`☕ 카페인 ${p.boostT.toFixed(1)}s`, W / 2, H - (s.slowT > 0 ? 120 : 100));
   }
 }
 
@@ -1207,221 +1435,296 @@ function drawObstacle(o) {
   }
 }
 
-/* 남자: 셔츠 + 바지, 뛰는 애니메이션 */
+const TAU = Math.PI * 2;
+function ellipse(x, y, rx, ry, rot = 0) { ctx.beginPath(); ctx.ellipse(x, y, rx, ry, rot, 0, TAU); ctx.fill(); }
+function radial(x, y, r, stops) {
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  stops.forEach(([o, c]) => g.addColorStop(o, c));
+  return g;
+}
+function linear(x0, y0, x1, y1, stops) {
+  const g = ctx.createLinearGradient(x0, y0, x1, y1);
+  stops.forEach(([o, c]) => g.addColorStop(o, c));
+  return g;
+}
+// 팔·다리 한 마디: 두께 있는 둥근 선
+function limb(x0, y0, x1, y1, x2, y2, w, color) {
+  ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+}
+function sneaker(x, y) {
+  ctx.fillStyle = "#f4f4f2"; ellipse(x + 1.8, y, 4.4, 2.3);
+  ctx.fillStyle = "#b8bcc2"; ctx.fillRect(x - 2.4, y + 1.2, 8.6, 1.1);
+  ctx.fillStyle = "rgba(0,0,0,.12)"; ellipse(x + 3, y - 0.6, 1.6, 0.8);
+}
+
+/* 남자: 셔츠·청바지·서류가방(100만 달러), 달리는 애니메이션 */
 function drawMan(p) {
   const moving = Math.hypot(p.vx, p.vy) > 10;
-  const swing = moving ? Math.sin(p.anim) : 0;
-  const bounce = moving ? Math.abs(Math.sin(p.anim)) * 2 : 0;
+  const sw = moving ? Math.sin(p.anim) : 0;
+  const bounce = moving ? Math.abs(Math.cos(p.anim)) * 2.2 : 0;
   const x = p.x, y = p.y - bounce;
+  const scared = Math.hypot(p.x - game.snail.x, p.y - game.snail.y) < 300;
 
-  ctx.fillStyle = "rgba(0,0,0,.25)";
-  ctx.beginPath(); ctx.ellipse(p.x, p.y + 16, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "rgba(0,0,0,.28)"; ellipse(p.x, p.y + 17, 12, 4);
 
   if (p.dashT > 0) {
-    ctx.globalAlpha = 0.3;
-    ctx.fillStyle = "#5cc8ff";
-    ctx.beginPath(); ctx.ellipse(x - p.dirX * 14, y - p.dirY * 14, 10, 16, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.25; ctx.fillStyle = "#5cc8ff";
+    ellipse(x - p.dirX * 16, y - p.dirY * 16 - 6, 9, 20);
     ctx.globalAlpha = 1;
   }
 
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(p.face, 1);
-  ctx.lineCap = "round";
 
-  // 다리
-  ctx.strokeStyle = "#2d3a5a"; ctx.lineWidth = 5;
-  ctx.beginPath(); ctx.moveTo(-3, 4); ctx.lineTo(-3 + swing * 6, 15); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(3, 4); ctx.lineTo(3 - swing * 6, 15); ctx.stroke();
-  // 신발
-  ctx.fillStyle = "#222";
-  ctx.beginPath(); ctx.ellipse(-3 + swing * 6 + 1.5, 16, 3.5, 2, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(3 - swing * 6 + 1.5, 16, 3.5, 2, 0, 0, Math.PI * 2); ctx.fill();
-  // 몸통
-  ctx.fillStyle = "#e9e9e9";
-  ctx.beginPath(); ctx.roundRect(-7, -10, 14, 16, 5); ctx.fill();
-  // 팔
-  ctx.strokeStyle = "#e9e9e9"; ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.moveTo(-5, -6); ctx.lineTo(-7 - swing * 5, 3); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(5, -6); ctx.lineTo(7 + swing * 5, 3); ctx.stroke();
-  ctx.fillStyle = "#f1c9a5";
-  ctx.beginPath(); ctx.arc(-7 - swing * 5, 4, 2.3, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(7 + swing * 5, 4, 2.3, 0, Math.PI * 2); ctx.fill();
-  // 머리
-  ctx.fillStyle = "#f1c9a5";
-  ctx.beginPath(); ctx.arc(0, -17, 8, 0, Math.PI * 2); ctx.fill();
+  // 뒤쪽 팔
+  limb(0, -17, -sw * 5 - 1, -9, -sw * 7 + 1, -2, 3.6, "#8ea8c4");
+  ctx.fillStyle = "#d9a47f"; ellipse(-sw * 7 + 1, -1.5, 1.9, 1.9);
+  // 다리 (청바지)
+  limb(-1, -1, -sw * 5, 7, -sw * 8, 14.5, 5, "#27324a");
+  sneaker(-sw * 8, 15.5);
+  limb(1, -1, sw * 5 + 1, 7, sw * 8, 14.5, 5, "#3a4d74");
+  sneaker(sw * 8, 15.5);
+  // 몸통 (셔츠)
+  ctx.fillStyle = linear(-7, 0, 7, 0, [[0, "#8ca6c2"], [0.45, "#cfe0f1"], [1, "#8aa3bf"]]);
+  ctx.beginPath();
+  ctx.moveTo(-6.5, -18.5); ctx.quadraticCurveTo(0, -21, 6.5, -18.5);
+  ctx.lineTo(6.2, 0.5); ctx.lineTo(-6.2, 0.5); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = "rgba(60,80,110,.35)"; ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(1.5, -16); ctx.lineTo(1.5, -1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-5, -9); ctx.quadraticCurveTo(-2, -7, 0, -9); ctx.stroke();
+  ctx.fillStyle = "#eef4fa";
+  ctx.beginPath(); ctx.moveTo(-3, -19.5); ctx.lineTo(0.5, -15.5); ctx.lineTo(3.5, -19.5); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#3b2a1e"; ctx.fillRect(-6.2, -1.2, 12.4, 2.2);
+  ctx.fillStyle = "#b9965a"; ctx.fillRect(1, -1, 2.2, 1.8);
+  // 목·머리
+  ctx.fillStyle = "#d9a47f"; ctx.fillRect(-0.5, -23, 3.6, 4);
+  ctx.fillStyle = radial(2.5, -28.5, 8, [[0, "#f6d6b8"], [0.7, "#e6b38f"], [1, "#c98f69"]]);
+  ellipse(1.2, -27, 5.4, 6.4);
+  ctx.fillStyle = "#dca07c"; ellipse(-2, -26.5, 1.4, 2);
   // 머리카락
-  ctx.fillStyle = "#3b2a1e";
-  ctx.beginPath(); ctx.arc(0, -19, 8, Math.PI * 1.05, Math.PI * 1.95); ctx.fill();
-  // 눈 (겁먹은 표정)
-  const dist = Math.hypot(p.x - game.snail.x, p.y - game.snail.y);
-  const scared = dist < 300;
-  ctx.fillStyle = "#fff";
-  ctx.beginPath(); ctx.arc(3, -17, scared ? 2.4 : 1.8, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "#111";
-  ctx.beginPath(); ctx.arc(3.6, -17, scared ? 1.1 : 1.2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#231811";
+  ctx.beginPath();
+  ctx.moveTo(-4.3, -24.5); ctx.quadraticCurveTo(-6, -31, -1, -33.8);
+  ctx.quadraticCurveTo(5, -35.5, 7, -30.5); ctx.quadraticCurveTo(4, -31.5, 1.5, -30);
+  ctx.quadraticCurveTo(-1, -29, -2, -25.5); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,.12)"; ellipse(0.5, -32.3, 3, 1, -0.3);
+  // 얼굴
+  ctx.strokeStyle = "#2a1d15"; ctx.lineWidth = 0.9;
+  ctx.beginPath(); ctx.moveTo(2.8, scared ? -30.6 : -29.8); ctx.lineTo(5.6, scared ? -30.2 : -29.8); ctx.stroke();
   if (scared) {
-    ctx.strokeStyle = "#111"; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.arc(4, -12, 2, Math.PI, 0); ctx.stroke();
-    // 식은땀
-    ctx.fillStyle = "#8fd3ff";
-    ctx.beginPath(); ctx.ellipse(-6, -22 + (game.t * 20 % 6), 1.5, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#fff"; ellipse(4.3, -27.8, 1.5, 1.7);
+    ctx.fillStyle = "#1b1b1b"; ellipse(4.9, -27.7, 0.7, 0.8);
   } else {
-    ctx.strokeStyle = "#111"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(2, -12.5); ctx.lineTo(6, -12.5); ctx.stroke();
+    ctx.fillStyle = "#1b1b1b"; ellipse(4.5, -27.8, 0.7, 0.8);
   }
+  ctx.strokeStyle = "#c08564"; ctx.lineWidth = 0.9;
+  ctx.beginPath(); ctx.moveTo(6.3, -27.3); ctx.lineTo(7, -25.4); ctx.lineTo(6, -25.1); ctx.stroke();
+  if (scared) {
+    ctx.fillStyle = "#5a1f1f"; ellipse(4.8, -23.2, 1.2, 1.4);
+    ctx.fillStyle = "rgba(143,211,255,.9)"; ellipse(-3.5, -30 + (game.t * 18 % 7), 1, 1.7);
+  } else {
+    ctx.strokeStyle = "#8a4b3a"; ctx.lineWidth = 0.9;
+    ctx.beginPath(); ctx.moveTo(3.6, -23.4); ctx.lineTo(6, -23.6); ctx.stroke();
+  }
+  // 앞쪽 팔 + 서류가방
+  const hx = sw * 6 + 2, hy = -1;
+  limb(0.5, -17, sw * 4 + 1.5, -9, hx, hy, 3.8, "#b3c9df");
+  ctx.fillStyle = linear(hx - 5, hy + 1, hx - 5, hy + 9, [[0, "#3a2a20"], [1, "#1c140f"]]);
+  ctx.beginPath(); ctx.roundRect(hx - 5, hy + 1.5, 10, 7.5, 1.4); ctx.fill();
+  ctx.strokeStyle = "#1c140f"; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(hx - 2, hy + 1.6); ctx.lineTo(hx - 2, hy - 0.2); ctx.lineTo(hx + 2, hy - 0.2); ctx.lineTo(hx + 2, hy + 1.6); ctx.stroke();
+  ctx.fillStyle = "#c9a45a"; ctx.fillRect(hx - 0.8, hy + 3.5, 1.6, 1.2);
+  ctx.fillStyle = "#d9a47f"; ellipse(hx, hy, 1.9, 1.9);
   ctx.restore();
 
-  // 돈가방 (100만 달러를 들고 도망!)
-  ctx.font = "12px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText("💵", x + p.face * 11, y + 3);
+  // 방패 보호막
+  if (p.invulnT > 0) {
+    ctx.strokeStyle = `rgba(92,200,255,${0.5 + Math.sin(game.t * 20) * 0.3})`;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(p.x, p.y - 10, 26, 0, TAU); ctx.stroke();
+  }
 }
 
-/* 불멸의 살인 달팽이: 분홍 우비 + 더듬이 후드 + 등에 큰 달팽이 껍데기 */
+/* 불멸의 살인 달팽이: 분홍 PVC 우비 + 더듬이 후드 + 등에 진짜 같은 달팽이 껍데기 */
+function drawShell(cx, cy, R) {
+  // 바탕
+  ctx.fillStyle = radial(cx - R * 0.3, cy - R * 0.35, R * 1.25, [[0, "#f0dcb4"], [0.35, "#c79a64"], [0.75, "#8a5f37"], [1, "#4f3420"]]);
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.fill();
+  // 로그 나선 띠 (껍데기 소용돌이)
+  const b = 0.2, turns = 3.3 * TAU;
+  const spiral = (off, width, color) => {
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = "round";
+    ctx.beginPath();
+    for (let t = 0; t <= turns; t += 0.08) {
+      const r = R * 0.95 * Math.exp(-b * t) + off;
+      if (r < 0.8) break;
+      const px = cx + Math.cos(t + 0.6) * r, py = cy + Math.sin(t + 0.6) * r;
+      t === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  };
+  spiral(0, 3.2, "rgba(60,36,18,.55)");
+  spiral(-2.2, 1.6, "rgba(255,240,210,.35)");
+  spiral(-5, 2.2, "rgba(95,60,30,.35)");
+  // 성장선
+  ctx.strokeStyle = "rgba(60,36,18,.18)"; ctx.lineWidth = 0.7;
+  for (let t = 0; t < TAU * 1.6; t += 0.22) {
+    const r1 = R * 0.95 * Math.exp(-b * t), r0 = R * 0.95 * Math.exp(-b * (t + TAU));
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(t + 0.6) * r1, cy + Math.sin(t + 0.6) * r1);
+    ctx.lineTo(cx + Math.cos(t + 0.6) * r0, cy + Math.sin(t + 0.6) * r0);
+    ctx.stroke();
+  }
+  // 얼룩
+  ctx.fillStyle = "rgba(70,45,22,.28)";
+  for (let i = 0; i < 14; i++) {
+    const a = i * 2.39, r = R * (0.25 + ((i * 37) % 60) / 100);
+    ellipse(cx + Math.cos(a) * r, cy + Math.sin(a) * r, 2.6, 1.3, a);
+  }
+  // 광택
+  ctx.fillStyle = radial(cx - R * 0.42, cy - R * 0.45, R * 0.45, [[0, "rgba(255,255,255,.55)"], [1, "rgba(255,255,255,0)"]]);
+  ctx.beginPath(); ctx.arc(cx - R * 0.42, cy - R * 0.45, R * 0.45, 0, TAU); ctx.fill();
+  ctx.strokeStyle = "rgba(40,24,12,.6)"; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.stroke();
+}
+
 function drawSnail(s) {
   const facing = Math.cos(s.dir) >= 0 ? 1 : -1;
-  const step = Math.sin(s.wob * 2);
+  const step = s.stunT > 0 ? 0 : Math.sin(s.wob * 2);
   const bob = Math.abs(step) * 1.5;
+  const PINK = [[0, "#f07fa3"], [0.35, "#f9bfd1"], [0.55, "#fbd3df"], [1, "#e57599"]];
 
-  // 위협 오라
-  const aura = ctx.createRadialGradient(s.x, s.y - 10, 5, s.x, s.y - 10, 55);
-  aura.addColorStop(0, "rgba(150,20,30,.25)");
-  aura.addColorStop(1, "rgba(150,20,30,0)");
-  ctx.fillStyle = aura;
-  ctx.beginPath(); ctx.arc(s.x, s.y - 10, 55, 0, Math.PI * 2); ctx.fill();
-
-  ctx.fillStyle = "rgba(0,0,0,.25)";
-  ctx.beginPath(); ctx.ellipse(s.x, s.y + 16, 24, 6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = radial(s.x, s.y - 12, 60, [[0, "rgba(150,20,30,.22)"], [1, "rgba(150,20,30,0)"]]);
+  ctx.beginPath(); ctx.arc(s.x, s.y - 12, 60, 0, TAU); ctx.fill();
+  ctx.fillStyle = "rgba(0,0,0,.28)"; ellipse(s.x, s.y + 17, 26, 7);
 
   ctx.save();
   ctx.translate(s.x, s.y - bob);
+  if (s.stunT > 0) ctx.rotate(Math.sin(game.t * 30) * 0.08);
 
-  // --- 껍데기 (몸 뒤) ---
-  const shellY = -16;
-  const sg = ctx.createRadialGradient(-6, shellY - 8, 4, 0, shellY, 30);
-  sg.addColorStop(0, "#d8c09a");
-  sg.addColorStop(0.6, "#9c7a52");
-  sg.addColorStop(1, "#5e4328");
-  ctx.fillStyle = sg;
-  ctx.beginPath(); ctx.ellipse(0, shellY, 27, 30, 0, 0, Math.PI * 2); ctx.fill();
-  // 얼룩 무늬
-  ctx.fillStyle = "rgba(60,40,20,.35)";
-  for (let i = 0; i < 9; i++) {
-    const a = i * 0.7, r = 8 + (i * 7) % 16;
-    ctx.beginPath(); ctx.ellipse(Math.cos(a) * r, shellY + Math.sin(a) * r, 3.5, 2, a, 0, Math.PI * 2); ctx.fill();
-  }
-  // 나선
-  ctx.strokeStyle = "rgba(70,45,20,.7)"; ctx.lineWidth = 2;
-  ctx.beginPath();
-  for (let a = 0; a < Math.PI * 5; a += 0.15) {
-    const r = 24 - a * 1.45;
-    if (r < 1) break;
-    const px = Math.cos(a) * r * 0.9, py = shellY + Math.sin(a) * r;
-    a === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-  }
-  ctx.stroke();
+  // 껍데기 (몸 뒤)
+  drawShell(-facing * 3, -20, 29);
 
-  // --- 로켓 부스터 (45일~) ---
+  // 로켓 부스터 (45일~)
   if (s.phase >= 2) {
     for (const side of [-1, 1]) {
-      const bx = side * 24;
+      const bx = side * 27;
       if (s.boostT > 0 || Math.random() < 0.3) {
-        const fl = s.boostT > 0 ? 18 + Math.random() * 10 : 6;
-        const fg = ctx.createLinearGradient(bx, 4, bx, 4 + fl);
-        fg.addColorStop(0, "rgba(160,230,255,.95)");
-        fg.addColorStop(1, "rgba(40,120,255,0)");
-        ctx.fillStyle = fg;
-        ctx.beginPath(); ctx.moveTo(bx - 5, 4); ctx.lineTo(bx, 4 + fl); ctx.lineTo(bx + 5, 4); ctx.fill();
+        const fl = s.boostT > 0 ? 20 + Math.random() * 12 : 6;
+        ctx.fillStyle = linear(bx, 6, bx, 6 + fl, [[0, "rgba(200,245,255,.95)"], [0.4, "rgba(90,170,255,.8)"], [1, "rgba(40,120,255,0)"]]);
+        ctx.beginPath(); ctx.moveTo(bx - 5, 6); ctx.lineTo(bx, 6 + fl); ctx.lineTo(bx + 5, 6); ctx.fill();
       }
-      ctx.fillStyle = "#d9dde2";
-      ctx.beginPath(); ctx.roundRect(bx - 6, -34, 12, 38, 5); ctx.fill();
-      ctx.fillStyle = "#3a3f46";
-      ctx.fillRect(bx - 6, -2, 12, 6);
-      ctx.fillStyle = "#4fd6e8";
-      ctx.fillRect(bx - 1.5, -30, 3, 22);
-      ctx.fillStyle = "#c62828";
-      ctx.fillRect(bx - 6, -20, 12, 2);
+      ctx.fillStyle = linear(bx - 7, 0, bx + 7, 0, [[0, "#9aa3ad"], [0.4, "#f1f4f7"], [1, "#7d8690"]]);
+      ctx.beginPath(); ctx.roundRect(bx - 7, -36, 14, 42, 6); ctx.fill();
+      ctx.fillStyle = "#2f343b"; ctx.fillRect(bx - 7, 1, 14, 6);
+      ctx.fillStyle = "#43e0f0"; ctx.fillRect(bx - 1.5, -31, 3, 24);
+      ctx.fillStyle = "#c62828"; ctx.fillRect(bx - 7, -21, 14, 2);
     }
   }
 
   ctx.scale(facing, 1);
 
-  // --- 다리 (검정 바지 + 흰 신발) ---
-  ctx.fillStyle = "#1b1b1f";
-  ctx.fillRect(-7, 2, 5.5, 11 + step * 2);
-  ctx.fillRect(1.5, 2, 5.5, 11 - step * 2);
-  ctx.fillStyle = "#f4f4f4";
-  ctx.beginPath(); ctx.ellipse(-4, 14 + step * 2, 4.5, 2.4, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(4.5, 14 - step * 2, 4.5, 2.4, 0, 0, Math.PI * 2); ctx.fill();
+  // 다리 (검정 바지) + 흰 운동화
+  limb(-3.5, 2, -3.5 + step * 2, 9, -3.5 + step * 3, 14.5, 5.5, "#141418");
+  limb(3.5, 2, 3.5 - step * 2, 9, 3.5 - step * 3, 14.5, 5.5, "#1f1f25");
+  sneaker(-3.5 + step * 3 - 1, 15.5);
+  sneaker(3.5 - step * 3 - 1, 15.5);
 
-  // --- 분홍 우비 몸통 ---
-  ctx.fillStyle = "#f4a7c0";
-  ctx.beginPath();
-  ctx.moveTo(-8, -18); ctx.lineTo(8, -18);
-  ctx.lineTo(12, 5); ctx.lineTo(-12, 5);
-  ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = "#e58aa8"; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, -17); ctx.lineTo(0, 5); ctx.stroke();
-  ctx.fillStyle = "#e07a9c";
-  for (const by of [-12, -6, 0]) { ctx.beginPath(); ctx.arc(1.8, by, 0.9, 0, Math.PI * 2); ctx.fill(); }
-
-  // --- 팔: 90일 전엔 양팔 벌리기, 이후엔 로켓포 ---
-  ctx.strokeStyle = "#f4a7c0"; ctx.lineWidth = 5; ctx.lineCap = "round";
+  // 팔: 90일 전엔 양팔 벌리기, 이후엔 로켓포
+  const wave = s.stunT > 0 ? 6 : Math.sin(s.wob * 1.5) * 4;
   if (s.phase < 3) {
-    const wave = Math.sin(s.wob * 1.5) * 4;
-    ctx.beginPath(); ctx.moveTo(-7, -15); ctx.lineTo(-20, -12 + wave); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(7, -15); ctx.lineTo(20, -12 - wave); ctx.stroke();
-    ctx.fillStyle = "#f1c9a5";
-    ctx.beginPath(); ctx.arc(-21, -12 + wave, 2.5, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(21, -12 - wave, 2.5, 0, Math.PI * 2); ctx.fill();
-  } else {
-    ctx.beginPath(); ctx.moveTo(-6, -14); ctx.lineTo(4, -8); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(6, -14); ctx.lineTo(10, -8); ctx.stroke();
-    // 로켓포
-    ctx.fillStyle = "#2b2e33";
-    ctx.beginPath(); ctx.roundRect(-8, -13, 34, 7, 3); ctx.fill();
-    ctx.fillStyle = "#15171a";
-    ctx.beginPath(); ctx.arc(26, -9.5, 5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#3d4249";
-    ctx.fillRect(4, -18, 8, 5);
-    ctx.fillStyle = "#e33";
-    ctx.beginPath(); ctx.arc(10, -15.5, 1.2, 0, Math.PI * 2); ctx.fill();
+    limb(-7, -16, -15, -13 + wave * 0.5, -23, -12 + wave, 5, "#f3a3bd");
+    limb(7, -16, 15, -13 - wave * 0.5, 23, -12 - wave, 5, "#f7b7ca");
+    ctx.fillStyle = "#e7b594"; ellipse(-24, -12 + wave, 2.4, 2.2); ellipse(24, -12 - wave, 2.4, 2.2);
   }
 
-  // --- 머리: 분홍 후드 + 얼굴 ---
-  ctx.fillStyle = "#f4a7c0";
-  ctx.beginPath(); ctx.arc(0, -26, 10.5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "#f1c9a5";
-  ctx.beginPath(); ctx.ellipse(1.5, -24.5, 7, 7.5, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "#2a1d14";
-  ctx.beginPath(); ctx.ellipse(1.5, -30.5, 6.5, 2.2, 0, Math.PI, 0); ctx.fill();
-  // 웃는 눈 (^ ^)
-  ctx.strokeStyle = "#222"; ctx.lineWidth = 1.3;
-  ctx.beginPath(); ctx.arc(-1.2, -25.5, 1.8, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
-  ctx.beginPath(); ctx.arc(4.5, -25.5, 1.8, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
-  // 크게 웃는 입
-  ctx.fillStyle = "#8a1f2b";
-  ctx.beginPath(); ctx.arc(1.8, -21.5, 3.2, 0, Math.PI); ctx.fill();
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(-0.8, -21.5, 5.2, 1.1);
+  // PVC 우비 몸통
+  ctx.fillStyle = linear(-13, 0, 13, 0, PINK);
+  ctx.beginPath();
+  ctx.moveTo(-7.5, -19); ctx.quadraticCurveTo(0, -21.5, 7.5, -19);
+  ctx.lineTo(12.5, 5.5); ctx.quadraticCurveTo(0, 7.5, -12.5, 5.5);
+  ctx.closePath(); ctx.fill();
+  // 광택 줄
+  ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.lineWidth = 1.4; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(-4.5, -16); ctx.quadraticCurveTo(-6.5, -5, -8, 3); ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,.3)"; ctx.lineWidth = 0.9;
+  ctx.beginPath(); ctx.moveTo(5.5, -15); ctx.quadraticCurveTo(7.5, -5, 9, 3); ctx.stroke();
+  // 주름·여밈·단추
+  ctx.strokeStyle = "rgba(170,60,95,.45)"; ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(1, -18); ctx.lineTo(1.5, 6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-9, 0); ctx.quadraticCurveTo(-5, -2, -2, 1); ctx.stroke();
+  ctx.fillStyle = "#e46f95";
+  for (const by of [-14, -8, -2]) ellipse(3, by, 0.9, 0.9);
 
-  // --- 더듬이 ---
+  // 로켓포 (90일~): 조준경 달린 검은 발사관
+  if (s.phase >= 3) {
+    limb(-6, -15, 0, -11, 6, -10, 5, "#f3a3bd");
+    ctx.fillStyle = linear(0, -15, 0, -6, [[0, "#4a4f57"], [0.5, "#23262b"], [1, "#101114"]]);
+    ctx.beginPath(); ctx.roundRect(-10, -15, 40, 8, 3); ctx.fill();
+    ctx.fillStyle = "#0b0c0e"; ellipse(30, -11, 3, 5);
+    ctx.fillStyle = "#2a2d32"; ctx.fillRect(6, -21, 11, 6);
+    ctx.fillStyle = "#11161c"; ellipse(17, -18, 1.8, 2.8);
+    ctx.fillStyle = "#e33"; ellipse(12, -18, 1.1, 1.1);
+    ctx.fillStyle = "#e7b594"; ellipse(7, -9.5, 2.4, 2.2);
+  }
+
+  // 후드 + 얼굴
+  ctx.fillStyle = radial(-2, -32, 14, [[0, "#fbd3df"], [0.6, "#f3a6bf"], [1, "#df6e93"]]);
+  ctx.beginPath(); ctx.arc(0.5, -27.5, 11, 0, TAU); ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,.4)"; ellipse(-4, -34, 3.5, 1.6, -0.5);
+  ctx.fillStyle = radial(3, -28, 9, [[0, "#f6d2b3"], [0.7, "#e8b38e"], [1, "#c98c67"]]);
+  ellipse(2.4, -26.2, 6.6, 7.3);
+  // 앞머리
+  ctx.fillStyle = "#1a120d";
+  ctx.beginPath(); ctx.moveTo(-3.8, -30); ctx.quadraticCurveTo(2, -35.5, 8.6, -30.5);
+  ctx.quadraticCurveTo(4, -32, -3.8, -30); ctx.fill();
+  // 눈썹 + 웃는 눈 (^ ^)
+  ctx.strokeStyle = "#241810"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(-1.8, -30.6); ctx.lineTo(1, -31.2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(4, -31.2); ctx.lineTo(6.8, -30.6); ctx.stroke();
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(-0.3, -27.8, 1.5, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+  ctx.beginPath(); ctx.arc(5.3, -27.8, 1.5, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+  // 볼 홍조
+  ctx.fillStyle = "rgba(240,110,120,.3)"; ellipse(-1.8, -25, 1.8, 1.1); ellipse(7.4, -25, 1.8, 1.1);
+  // 코
+  ctx.strokeStyle = "#b97c5a"; ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(2.8, -26.8); ctx.quadraticCurveTo(3.8, -24.6, 2.4, -24.4); ctx.stroke();
+  // 크게 웃는 입 + 이
+  ctx.fillStyle = "#5a1420";
+  ctx.beginPath(); ctx.moveTo(-1, -22.8); ctx.quadraticCurveTo(2.6, -17.6, 6.4, -22.8); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#fbfaf5";
+  ctx.beginPath(); ctx.moveTo(-0.6, -22.7); ctx.lineTo(6, -22.7); ctx.lineTo(5.4, -21.6); ctx.lineTo(0, -21.6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#e0707f"; ellipse(2.7, -19.9, 2, 0.9);
+
+  // 더듬이 (흰 막대 + 분홍 공)
   const aw = Math.sin(s.wob * 1.3) * 2;
-  ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(-4, -34); ctx.quadraticCurveTo(-7, -40, -9 + aw, -45); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(5, -34); ctx.quadraticCurveTo(8, -40, 10 - aw, -45); ctx.stroke();
-  ctx.fillStyle = "#f7c6d6";
-  ctx.beginPath(); ctx.arc(-9 + aw, -46, 3, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(10 - aw, -46, 3, 0, Math.PI * 2); ctx.fill();
+  for (const [bx, tx] of [[-3.5, -10 + aw], [5, 12 - aw]]) {
+    ctx.strokeStyle = "#d9d9d9"; ctx.lineWidth = 3.4; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(bx, -36); ctx.quadraticCurveTo(bx + (tx - bx) * 0.3, -44, tx, -48); ctx.stroke();
+    ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(bx, -36); ctx.quadraticCurveTo(bx + (tx - bx) * 0.3, -44, tx, -48); ctx.stroke();
+    ctx.fillStyle = radial(tx - 1, -50, 4, [[0, "#ffe3ec"], [1, "#e882a3"]]);
+    ellipse(tx, -49, 3.3, 3.3);
+  }
 
   ctx.restore();
 
-  // 소금 맞은 상태
+  // 소금 맞은 상태 / 기절
   if (s.slowT > 0) {
     ctx.fillStyle = "#fff";
-    for (let i = 0; i < 6; i++) {
-      const a = game.t * 2 + i * 1.05;
-      ctx.fillRect(s.x + Math.cos(a) * 26 - 1.5, s.y - 18 + Math.sin(a) * 14 - 1.5, 3, 3);
+    for (let i = 0; i < 8; i++) {
+      const a = game.t * 2 + i * 0.785;
+      ctx.fillRect(s.x + Math.cos(a) * 30 - 1.5, s.y - 20 + Math.sin(a) * 16 - 1.5, 3, 3);
+    }
+  }
+  if (s.stunT > 0) {
+    ctx.font = "14px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (let i = 0; i < 3; i++) {
+      const a = game.t * 5 + i * 2.1;
+      ctx.fillText("💫", s.x + Math.cos(a) * 14, s.y - 62 + Math.sin(a) * 4);
     }
   }
 
@@ -1430,7 +1733,7 @@ function drawSnail(s) {
     ctx.font = "bold 14px sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     const w = ctx.measureText(s.say).width + 16;
-    const bx = s.x, by = s.y - 72;
+    const bx = s.x, by = s.y - 80;
     ctx.globalAlpha = Math.min(1, s.sayT * 3);
     ctx.fillStyle = "rgba(20,20,20,.85)";
     ctx.beginPath(); ctx.roundRect(bx - w / 2, by - 12, w, 24, 6); ctx.fill();
