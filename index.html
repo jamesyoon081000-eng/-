@@ -28,17 +28,17 @@
     overflow: hidden;
     user-select: none;
     -webkit-user-select: none;
-    touch-action: none;
   }
   .screen {
     position: fixed; inset: 0;
     display: none;
-    align-items: center; justify-content: center;
     padding: 16px;
+    overflow-y: auto;
     z-index: 10;
   }
   .screen.active { display: flex; }
   .card {
+    margin: auto;
     width: 100%; max-width: 420px;
     background: var(--panel);
     border: 1px solid #2f3a2a;
@@ -75,6 +75,8 @@
   }
   .btn:active { transform: scale(.98); }
   .btn:hover { filter: brightness(1.08); }
+  .btn:disabled { opacity: .55; cursor: default; filter: none; transform: none; }
+  .btn-gold { background: transparent; color: var(--gold); border: 1px solid #6b5a1e; }
   .btn-google { background: #fff; color: #1f1f1f; }
   .btn-primary { background: var(--accent); color: #0f1a08; }
   .btn-ghost { background: transparent; color: var(--muted); border: 1px solid #3a4634; }
@@ -134,7 +136,7 @@
   .howto b { color: var(--accent); }
 
   /* 게임 */
-  #game { position: fixed; inset: 0; display: none; }
+  #game { position: fixed; inset: 0; display: none; touch-action: none; }
   #game.active { display: block; }
   canvas { display: block; width: 100%; height: 100%; }
   .hud {
@@ -277,6 +279,7 @@
     <div class="best" id="bestText"></div>
     <div class="stack">
       <button class="btn btn-primary" id="startBtn">▶ 게임 시작</button>
+      <button class="btn btn-gold" id="dailyBtn"></button>
       <button class="btn btn-ghost" id="shopBtn" style="color:var(--gold);border-color:#6b5a1e">🛒 상점</button>
       <button class="btn btn-ghost" id="howtoBtn">조작법</button>
       <button class="btn btn-ghost" id="boardBtn">🏆 명예의 전당</button>
@@ -305,7 +308,24 @@
       🚀 <b>45일</b>부터 로켓 부스터로 순간 가속<br>
       🔫 <b>90일</b>부터 로켓포 발사 — 피하세요!
     </div>
-    <button class="btn btn-primary" data-back>돌아가기</button>
+    <div class="stack">
+      <button class="btn btn-ghost" id="tutAgainBtn">📖 튜토리얼 다시 보기</button>
+      <button class="btn btn-primary" data-back>돌아가기</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 튜토리얼 (첫 판 시작 전) ============ -->
+<section class="screen" id="tutorialScreen">
+  <div class="card">
+    <div class="title-snail" id="tutIcon"></div>
+    <h2 id="tutTitle"></h2>
+    <p class="subtitle" id="tutText" style="min-height:84px;margin-bottom:8px"></p>
+    <p class="hint" id="tutStep" style="margin:0 0 14px"></p>
+    <div class="row">
+      <button class="btn btn-ghost" id="tutSkip">건너뛰기</button>
+      <button class="btn btn-primary" id="tutNext"></button>
+    </div>
   </div>
 </section>
 
@@ -593,6 +613,11 @@ function renderMenu() {
     u.provider === "email" ? "이메일 · " + u.email + " · ☁️ 자동 저장" :
     "👤 게스트 · 이 브라우저에서만 이어집니다";
   $("walletText").textContent = "💵 " + fmtMoney(profile.wallet);
+  const daily = dailyState();
+  $("dailyBtn").disabled = daily.claimed;
+  $("dailyBtn").textContent = daily.claimed
+    ? `✅ 오늘 출석 완료 · 연속 ${daily.streak}일`
+    : `🎁 출석 보상 받기 +${fmtMoney(daily.reward)} · 연속 ${daily.streak}일째`;
   const b = profile.best;
   $("bestText").textContent = b
     ? `최고 기록: ${b.days}일 생존 · ${fmtMoney(b.money)} · 총 ${profile.plays}판`
@@ -605,6 +630,7 @@ const GIFT = 1000000; // 처음 받는 돈
 const newProfile = () => ({
   name: currentUser.name, best: null, plays: 0, totalDays: 0, runs: [], muted: false,
   wallet: GIFT, inv: { salt: 0, gun: 0, tp: 0, shield: 0 }, upg: { shoes: 0, lungs: 0 },
+  daily: null, tutorialDone: false,
 });
 const useCloud = () => db && currentUser && !currentUser.local;
 
@@ -654,6 +680,61 @@ function recordRun(days, money) {
     }).catch(() => {});
   }
   return isBest;
+}
+
+/* ---------------- 출석 보상: 하루 한 번 (한국 시간 기준), 연속 출석하면 더 많이 ---------------- */
+const DAILY_BASE = 200000, DAILY_STEP = 50000, DAILY_MAX_STREAK = 7;
+const dayKey = (date = new Date()) => new Date(date.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10); // KST
+function dailyState() {
+  const today = dayKey(), d = profile.daily || {};
+  const claimed = d.last === today;
+  const kept = d.last === dayKey(new Date(Date.now() - 86400000)); // 어제도 출석했으면 연속
+  const streak = claimed ? d.streak : Math.min((kept ? d.streak : 0) + 1, DAILY_MAX_STREAK);
+  return { today, claimed, streak, reward: DAILY_BASE + DAILY_STEP * (streak - 1) };
+}
+function claimDaily() {
+  const d = dailyState();
+  if (d.claimed) return;
+  profile.wallet += d.reward;
+  profile.daily = { last: d.today, streak: d.streak };
+  saveProfile();
+  beep(880, 0.12, "square", 0.05); setTimeout(() => beep(1320, 0.15, "square", 0.05), 70);
+  renderMenu();
+}
+
+/* ---------------- 튜토리얼: 첫 판 시작 전에 한 번 ---------------- */
+const IS_TOUCH = matchMedia("(hover: none) and (pointer: coarse)").matches;
+const TUTORIAL = [
+  { icon: "🏃", title: "도망치세요",
+    text: IS_TOUCH ? "화면 아무 곳이나 누른 채 끌면 그 방향으로 움직입니다." : "WASD 또는 방향키로 움직입니다." },
+  { icon: "💨", title: "질주와 대시",
+    text: IS_TOUCH
+      ? "멀리 끌면 질주합니다. 파란 스태미나가 닳으니 아껴 쓰세요. 급할 땐 대시 버튼! (쿨타임 3초)"
+      : "Shift를 누른 채 이동하면 질주합니다. 파란 스태미나가 닳으니 아껴 쓰세요. 급할 땐 Space로 대시! (쿨타임 3초)" },
+  { icon: "💰", title: "줍고 버티세요",
+    text: "1초를 버티면 하루가 지나고 $10,000를 법니다. 돈가방은 +$100,000, 🧂 소금은 달팽이를 느리게, ☕ 커피는 스태미나를 채워 줍니다. 번 돈은 상점에서 쓸 수 있어요." },
+  { icon: "🐌", title: "달팽이는 멈추지 않습니다",
+    text: "닿으면 끝입니다. 나무와 바위도 통과하고 시간이 갈수록 빨라져요. 화면 가장자리의 빨간 화살표가 달팽이가 오는 방향입니다." },
+];
+let tutStep = 0, tutAfter = null;
+function renderTutorial() {
+  const t = TUTORIAL[tutStep], lastStep = tutStep === TUTORIAL.length - 1;
+  $("tutIcon").textContent = t.icon;
+  $("tutTitle").textContent = t.title;
+  $("tutText").textContent = t.text;
+  $("tutStep").textContent = `${tutStep + 1} / ${TUTORIAL.length}`;
+  $("tutNext").textContent = lastStep ? "알겠어요!" : "다음";
+  $("tutSkip").style.display = lastStep ? "none" : "";
+}
+function openTutorial(after) {
+  tutStep = 0; tutAfter = after;
+  renderTutorial();
+  show("tutorialScreen");
+}
+function closeTutorial() {
+  if (!profile.tutorialDone) { profile.tutorialDone = true; saveProfile(); }
+  const after = tutAfter; tutAfter = null;
+  after();
 }
 
 /* ---------------- 상점 ---------------- */
@@ -803,7 +884,12 @@ async function renderBoard() {
   }
 }
 
-$("startBtn").onclick = startGame;
+// 처음 하는 사람(한 판도 안 해본 계정)은 튜토리얼부터
+$("startBtn").onclick = () => profile.tutorialDone || profile.plays > 0 ? startGame() : openTutorial(startGame);
+$("dailyBtn").onclick = claimDaily;
+$("tutNext").onclick = () => { if (++tutStep >= TUTORIAL.length) closeTutorial(); else renderTutorial(); };
+$("tutSkip").onclick = closeTutorial;
+$("tutAgainBtn").onclick = () => openTutorial(() => show("howtoScreen"));
 $("shopBtn").onclick = () => openShop("menuScreen");
 $("overShopBtn").onclick = () => openShop("menuScreen");
 $("howtoBtn").onclick = () => { prevScreen = "menuScreen"; show("howtoScreen"); };
