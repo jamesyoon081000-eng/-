@@ -24,10 +24,10 @@ service cloud.firestore {
       return string(t.year()) + '-' + (m < 10 ? '0' + string(m) : string(m));
     }
 
-    // 관리자: 이메일 인증된 이 계정만 (Google 로그인 권장)
+    // 관리자: 이메일 인증된 이 계정들만 (Google 로그인 권장). index.html의 ADMIN_EMAILS와 같게 유지
     function isAdmin() {
       return request.auth != null
-        && request.auth.token.email == "jamesyoon081000@gmail.com"
+        && request.auth.token.email in ["jamesyoon081000@gmail.com", "soo0106b.com@gmail.com"]
         && request.auth.token.email_verified == true;
     }
 

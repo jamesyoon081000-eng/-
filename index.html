@@ -735,9 +735,9 @@ function daysLeftInSeason() {
 const seasonScores = sid => db.collection("seasons").doc(sid).collection("scores");
 let viewSeason = seasonOf();
 
-// 관리자: 이 Google 계정(이메일 인증된 계정)만 시즌 초기화 가능. 서버 규칙에서도 같은 조건으로 막음
-const ADMIN_EMAIL = "jamesyoon081000@gmail.com";
-const isAdmin = () => !!currentUser && currentUser.email === ADMIN_EMAIL && currentUser.verified && useCloud();
+// 관리자: 이 Google 계정들(이메일 인증된 계정)만 시즌 초기화 가능. 서버 규칙(firestore.rules)에도 같은 목록이 있음
+const ADMIN_EMAILS = ["jamesyoon081000@gmail.com", "soo0106b.com@gmail.com"];
+const isAdmin = () => !!currentUser && ADMIN_EMAILS.includes(currentUser.email) && currentUser.verified && useCloud();
 
 async function resetBoard() {
   if (!isAdmin()) return;
